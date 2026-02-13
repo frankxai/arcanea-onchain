@@ -1,0 +1,14 @@
+{
+  "name": "@arcanea/onboarding",
+  "version": "0.1.0",
+  "description": "Crossmint fiat-to-NFT onboarding for Arcanea",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest"
+  },
+  "keywords": ["arcanea", "crossmint", "fiat", "onboarding", "wallets"],
+  "license": "MIT"
+}

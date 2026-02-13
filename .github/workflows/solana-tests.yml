@@ -1,0 +1,31 @@
+name: Solana Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'contracts/solana/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'contracts/solana/**'
+
+jobs:
+  anchor-test:
+    name: Anchor Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - uses: metadaoproject/setup-anchor@v1
+        with:
+          anchor-version: '0.31.0'
+          solana-cli-version: '2.1.0'
+
+      - name: Run Anchor tests
+        working-directory: contracts/solana
+        run: anchor test

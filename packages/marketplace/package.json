@@ -1,0 +1,14 @@
+{
+  "name": "@arcanea/marketplace",
+  "version": "0.1.0",
+  "description": "Thirdweb marketplace and auction engine for Arcanea",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest"
+  },
+  "keywords": ["arcanea", "marketplace", "thirdweb", "auction", "nft"],
+  "license": "MIT"
+}

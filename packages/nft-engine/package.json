@@ -1,0 +1,14 @@
+{
+  "name": "@arcanea/nft-engine",
+  "version": "0.1.0",
+  "description": "AI art generation and metadata pipeline for Arcanea NFTs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest"
+  },
+  "keywords": ["arcanea", "nft", "ai-art", "metaplex", "metadata"],
+  "license": "MIT"
+}

@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+out/
+target/
+.anchor/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Turbo
+.turbo/
+
+# Solana
+test-ledger/
+
+# Foundry
+contracts/evm/cache/
+contracts/evm/out/
+
+# Coverage
+coverage/
+lcov.info

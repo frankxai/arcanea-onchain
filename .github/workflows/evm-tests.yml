@@ -1,0 +1,30 @@
+name: EVM Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'contracts/evm/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'contracts/evm/**'
+
+jobs:
+  foundry-test:
+    name: Foundry Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Run Foundry tests
+        working-directory: contracts/evm
+        run: forge test -vvv
+
+      - name: Check formatting
+        working-directory: contracts/evm
+        run: forge fmt --check

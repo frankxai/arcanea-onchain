@@ -1,0 +1,14 @@
+{
+  "name": "@arcanea/guardian-agents",
+  "version": "0.1.0",
+  "description": "ElizaOS-based autonomous Guardian agents for the Arcanea universe",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest"
+  },
+  "keywords": ["arcanea", "elizaos", "ai-agents", "guardians", "autonomous"],
+  "license": "MIT"
+}

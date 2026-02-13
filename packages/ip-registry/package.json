@@ -1,0 +1,14 @@
+{
+  "name": "@arcanea/ip-registry",
+  "version": "0.1.0",
+  "description": "Story Protocol IP registration and licensing for Arcanea",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest"
+  },
+  "keywords": ["arcanea", "story-protocol", "ip", "licensing", "royalties"],
+  "license": "MIT"
+}
