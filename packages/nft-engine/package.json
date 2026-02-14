@@ -7,8 +7,20 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "vitest"
+    "test": "vitest",
+    "typecheck": "tsc --noEmit"
   },
-  "keywords": ["arcanea", "nft", "ai-art", "metaplex", "metadata"],
-  "license": "MIT"
+  "keywords": [
+    "arcanea",
+    "nft",
+    "ai-art",
+    "metaplex",
+    "metadata"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.19.11",
+    "typescript": "^5.9.3",
+    "vitest": "^3.0.0"
+  }
 }
