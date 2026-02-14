@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./assets/hero-banner.png" alt="Arcanea On-Chain" width="100%"/>
+<img src="https://github.com/frankxai/arcanea-onchain/releases/download/v0.1.0-assets/01-onchain-hero.png" alt="Arcanea On-Chain" width="100%"/>
 
 <br/>
 
