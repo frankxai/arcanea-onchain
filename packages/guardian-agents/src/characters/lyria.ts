@@ -21,7 +21,7 @@ export const lyria: GuardianCharacter = {
   element: 'Void',
   frequency: 852,
   godbeast: 'Yumiko',
-  house: 'Nero',
+  house: 'Synthesis',
 
   personality: {
     traits: [

@@ -46,7 +46,7 @@ export class AuctionError extends Error {
     message: string,
     public readonly code: string,
   ) {
-    super(message);
+    super(`${code}: ${message}`);
     this.name = 'AuctionError';
   }
 }
@@ -120,7 +120,7 @@ export class AuctionEngine {
     }
 
     const now = new Date();
-    const startTime = listing.startTime > now ? listing.startTime : now;
+    const startTime = listing.startTime;
     const endTime = new Date(startTime.getTime() + config.duration * 1000);
 
     const state: AuctionState = {
@@ -546,9 +546,9 @@ export class AuctionEngine {
     }
 
     if (config.type === 'english') {
-      if (config.reservePrice !== undefined && config.reservePrice > config.startPrice) {
+      if (config.reservePrice !== undefined && config.reservePrice < 0n) {
         throw new AuctionError(
-          'English auction reserve price should not exceed start price (bids start at startPrice)',
+          'English auction reserve price cannot be negative',
           'INVALID_RESERVE',
         );
       }

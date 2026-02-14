@@ -397,16 +397,21 @@ describe('Auction Settlement', () => {
   });
 
   it('should settle English auction with winner when reserve is met', () => {
-    const pastStart = new Date(Date.now() - 2 * 86400 * 1000); // Started 2 days ago
-    const listing = createTestListing({ startTime: pastStart });
+    // Create active auction and place bids
+    const listing = createTestListing();
     const config = createEnglishConfig({
-      duration: 86400, // 1 day — already ended
+      duration: 86400,
       reservePrice: 500000000n,
     });
     engine.createAuction(listing, config);
 
-    // Place bid above reserve
+    // Place bid above reserve while auction is still active
     engine.placeBid(listing.id, 'bidder-1', 1000000000n, 'SOL');
+
+    // Simulate auction ending by moving end times to the past
+    const state = engine.getAuctionState(listing.id);
+    state.endTime = new Date(Date.now() - 1000);
+    state.effectiveEndTime = new Date(Date.now() - 1000);
 
     const result = engine.settleAuction(listing.id);
 
@@ -417,16 +422,21 @@ describe('Auction Settlement', () => {
   });
 
   it('should settle English auction without winner when reserve not met', () => {
-    const pastStart = new Date(Date.now() - 2 * 86400 * 1000);
-    const listing = createTestListing({ startTime: pastStart });
+    // Create active auction and place bids
+    const listing = createTestListing();
     const config = createEnglishConfig({
       duration: 86400,
       reservePrice: 5000000000n, // 5 SOL reserve
     });
     engine.createAuction(listing, config);
 
-    // Place bid below reserve
+    // Place bid below reserve while auction is still active
     engine.placeBid(listing.id, 'bidder-1', 1000000000n, 'SOL');
+
+    // Simulate auction ending
+    const state = engine.getAuctionState(listing.id);
+    state.endTime = new Date(Date.now() - 1000);
+    state.effectiveEndTime = new Date(Date.now() - 1000);
 
     const result = engine.settleAuction(listing.id);
 
