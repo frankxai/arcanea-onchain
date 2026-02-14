@@ -1,14 +1,27 @@
+<div align="center">
+
+<img src="./assets/hero-banner.png" alt="Arcanea On-Chain" width="100%"/>
+
+<br/><br/>
+
 # Arcanea On-Chain
+
+### True ownership for creators.
+
+<br/>
+
+[![License: MIT](https://img.shields.io/badge/MIT-0d1117?style=for-the-badge)](https://opensource.org/licenses/MIT)
+[![Solana](https://img.shields.io/badge/Solana-0d1117?style=for-the-badge&color=7fffd4)](https://solana.com)
+[![Base L2](https://img.shields.io/badge/Base_L2-0d1117?style=for-the-badge&color=9966ff)](https://base.org)
+[![Arcanea](https://img.shields.io/badge/Arcanea-ecosystem-0d1117?style=for-the-badge&color=ffd700)](https://github.com/frankxai/arcanea)
+
+</div>
+
+<br/>
 
 > *"What creators imagine should belong to them — permanently, provably, and profitably."*
 
-**AI-powered NFT generation, autonomous Guardian agents, and creator economy infrastructure for the Arcanea living universe.**
-
-Arcanea On-Chain is the blockchain layer of [Arcanea](https://github.com/frankxai/Arcanea) — a living mythology for the age of AI-human co-creation. This repository contains the smart contracts, AI agent frameworks, and marketplace infrastructure that give Arcanean creators true ownership over their work.
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-gold.svg)](https://opensource.org/licenses/MIT)
-[![Solana](https://img.shields.io/badge/Solana-Mainnet-purple)](https://solana.com)
-[![Base](https://img.shields.io/badge/Base-L2-blue)](https://base.org)
+The blockchain layer of [Arcanea](https://github.com/frankxai/arcanea) — smart contracts, AI agent frameworks, and marketplace infrastructure that give creators true ownership over their work.
 
 ---
 
