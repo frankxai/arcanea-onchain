@@ -1,9 +1,6 @@
 <div align="center">
 
-<!-- TODO: Replace with premium glassmorphic hero image showing on-chain architecture -->
-<!-- Image spec: Frosted glass panels with Solana + Base chains, Guardian agents as crystal nodes, NFT tiers as luminous layers -->
-<!-- Dimensions: 1920x960, void background, teal/gold/violet palette -->
-<!-- <img src="./assets/premium/hero-onchain.png" alt="Arcanea On-Chain" width="100%"/> -->
+<img src="./assets/hero-banner.png" alt="Arcanea On-Chain" width="100%"/>
 
 <br/>
 
