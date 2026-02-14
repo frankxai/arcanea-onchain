@@ -80,3 +80,25 @@ export type { StorageProvider } from './storage/arweave';
 
 export { checkCanonCompliance } from './quality/canon-checker';
 export type { CanonCheckResult } from './quality/canon-checker';
+
+// ---------------------------------------------------------------------------
+// Integration Workflows
+// ---------------------------------------------------------------------------
+
+export {
+  generateAndList,
+  purchaseAndDeliver,
+  collectionDrop,
+} from './integration/workflows';
+
+export type {
+  GenerateAndListParams,
+  PurchaseAndDeliverParams,
+  CollectionDropParams,
+  WorkflowResult,
+  WorkflowStep,
+  GeneratedNFT,
+  GuardianCuration,
+  ListingResult,
+  PurchaseResult,
+} from './integration/workflows';
