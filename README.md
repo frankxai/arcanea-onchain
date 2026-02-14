@@ -115,6 +115,10 @@ Dual-chain architecture with five specialized packages, each handling a distinct
 
 <br/>
 
+<p align="center">
+  <img src="https://github.com/frankxai/arcanea-onchain/releases/download/v0.1.0-assets/02-nft-tiers.png" alt="NFT Tier Architecture" width="100%">
+</p>
+
 ## NFT Tier Architecture
 
 Five tiers from legendary 1/1 auctions to mass-distributed compressed fragments. Each tier maps to a distinct chain, standard, and economic model.
@@ -142,6 +146,10 @@ Five tiers from legendary 1/1 auctions to mass-distributed compressed fragments.
 ---
 
 <br/>
+
+<p align="center">
+  <img src="https://github.com/frankxai/arcanea-onchain/releases/download/v0.1.0-assets/03-guardian-council.png" alt="Guardian Council" width="100%">
+</p>
 
 ## Guardian Agents
 
