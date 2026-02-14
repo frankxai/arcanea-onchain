@@ -247,8 +247,8 @@ Arcanea On-Chain is the ownership layer in a three-repository architecture. Each
 │   │     Arcanea      │───▶│  arcanea.ai      │───▶│ arcanea-onchain  │  │
 │   │   Intelligence   │    │    Platform       │    │   Ownership      │  │
 │   │                  │    │                  │    │                  │  │
-│   │  77 Skills       │    │  Web Application │    │  NFT Engine      │  │
-│   │  38 Agents       │    │  AI Companions   │    │  Guardian Agents │  │
+│   │  65+ Skills      │    │  Web Application │    │  NFT Engine      │  │
+│   │  40+ Agents      │    │  AI Companions   │    │  Guardian Agents │  │
 │   │  200K+ Words     │    │  Library Access  │    │  Marketplace     │  │
 │   │  10 Guardians    │    │  Creator Tools   │    │  IP Registry     │  │
 │   │  Canon & Lore    │    │  Design System   │    │  Smart Contracts │  │
