@@ -1,290 +1,365 @@
 <div align="center">
 
-<img src="./assets/hero-banner.png" alt="Arcanea On-Chain" width="100%"/>
-
-<br/><br/>
-
-# Arcanea On-Chain
-
-### True ownership for creators.
+<!-- TODO: Replace with premium glassmorphic hero image showing on-chain architecture -->
+<!-- Image spec: Frosted glass panels with Solana + Base chains, Guardian agents as crystal nodes, NFT tiers as luminous layers -->
+<!-- Dimensions: 1920x960, void background, teal/gold/violet palette -->
+<!-- <img src="./assets/premium/hero-onchain.png" alt="Arcanea On-Chain" width="100%"/> -->
 
 <br/>
 
-[![License: MIT](https://img.shields.io/badge/MIT-0d1117?style=for-the-badge)](https://opensource.org/licenses/MIT)
-[![Solana](https://img.shields.io/badge/Solana-0d1117?style=for-the-badge&color=7fffd4)](https://solana.com)
-[![Base L2](https://img.shields.io/badge/Base_L2-0d1117?style=for-the-badge&color=9966ff)](https://base.org)
-[![Arcanea](https://img.shields.io/badge/Arcanea-ecosystem-0d1117?style=for-the-badge&color=ffd700)](https://github.com/frankxai/arcanea)
+# Arcanea On-Chain
+
+### Ownership infrastructure for the age of creation.
+
+<br/>
+
+[![arcanea.ai](https://img.shields.io/badge/arcanea.ai-live-0d1117?style=for-the-badge&labelColor=0d1117&color=7fffd4)](https://arcanea.ai)
+[![Solana](https://img.shields.io/badge/Solana-primary-0d1117?style=for-the-badge&logo=solana&logoColor=white&color=9966ff)](https://solana.com)
+[![Base L2](https://img.shields.io/badge/Base-L2-0d1117?style=for-the-badge&logo=ethereum&logoColor=white&color=78a6ff)](https://base.org)
+[![ElizaOS](https://img.shields.io/badge/ElizaOS-agents-0d1117?style=for-the-badge&color=ffd700)](https://github.com/elizaOS/eliza)
+[![Story Protocol](https://img.shields.io/badge/Story_Protocol-IP-0d1117?style=for-the-badge&color=ff6b6b)](https://story.foundation)
+[![MIT](https://img.shields.io/badge/MIT-0d1117?style=for-the-badge)](./LICENSE)
+
+<br/>
+
+[**Architecture**](#architecture) &nbsp;&middot;&nbsp; [**NFT Tiers**](#nft-tier-architecture) &nbsp;&middot;&nbsp; [**Guardian Agents**](#guardian-agents) &nbsp;&middot;&nbsp; [**Contracts**](#smart-contracts) &nbsp;&middot;&nbsp; [**Ecosystem**](#ecosystem) &nbsp;&middot;&nbsp; [**Quick Start**](#quick-start)
 
 </div>
 
 <br/>
 
-> *"What creators imagine should belong to them — permanently, provably, and profitably."*
+---
 
-The blockchain layer of [Arcanea](https://github.com/frankxai/arcanea) — smart contracts, AI agent frameworks, and marketplace infrastructure that give creators true ownership over their work.
+<br/>
+
+## The Thesis
+
+The creative economy is structurally broken. Creators generate billions in value and own almost none of it. Platforms extract, algorithms dictate, and the relationship between creator and audience is mediated by corporations that optimize for engagement, not sovereignty.
+
+**Arcanea On-Chain is the ownership layer of [Arcanea](https://github.com/frankxai/Arcanea)** &mdash; the infrastructure that makes creator sovereignty real through cryptographic proof. Every creation becomes a permanent on-chain asset. Every derivative generates automatic royalties. Every Guardian agent operates autonomously on behalf of creators, not platforms.
+
+This is not "adding blockchain to a project." This is the architectural guarantee that what creators imagine, they own &mdash; permanently, provably, and profitably.
+
+> *"The antidote to a terrible future is imagining a good one. On-chain, that imagination becomes permanent, ownable, and sovereign."*
+
+<br/>
+
+### What This Enables
+
+| Capability | What It Does |
+|:-----------|:-------------|
+| **Permanent Ownership** | Every creation is an on-chain asset the creator controls forever. No platform can delete, demonetize, or suppress it |
+| **AI Art Generation** | Guardian agents generate, refine, and evolve art aligned with Arcanea's visual language &mdash; AI serves the creator, not the platform |
+| **Programmable Royalties** | Story Protocol IP registration ensures creators earn from every derivative, remix, and adaptation &mdash; automatically, in perpetuity |
+| **Frictionless Onboarding** | Crossmint integration: credit cards, Apple Pay, email wallets. No seed phrases, no friction |
+| **Autonomous Agents** | ElizaOS-powered Guardians curate collections, manage auctions, distribute rewards, and evolve with the community |
+| **Multi-Chain Reach** | Solana for high-speed minting and compressed NFTs. Base for EVM ecosystem access and broader collector reach |
+
+<br/>
 
 ---
 
-## Vision
-
-The creative economy is broken. Creators generate billions in value but own almost none of it. Platforms extract, algorithms dictate, and the relationship between creator and audience is mediated by corporations.
-
-**Arcanea On-Chain changes this by providing:**
-
-- **Permanent Ownership** — Every creation is an on-chain asset the creator controls forever. No platform can delete, demonetize, or suppress it.
-- **AI-Powered Generation** — Guardian agents (autonomous AI companions) help creators generate, refine, and evolve their art, stories, and worlds. The AI serves the creator, not the platform.
-- **Programmable Royalties** — Story Protocol IP registration ensures creators earn from every derivative, remix, and adaptation — automatically and in perpetuity.
-- **Frictionless Onboarding** — Crossmint integration means creators and collectors can mint and purchase with credit cards. No wallet setup, no seed phrases, no friction.
-- **Autonomous Agents** — ElizaOS-powered Guardian agents operate on-chain: curating collections, managing auctions, distributing rewards, and evolving based on community interaction.
-- **Multi-Chain Reach** — Solana for high-speed minting and compressed NFTs. Base (Ethereum L2) for EVM ecosystem compatibility and broader collector access.
-
-> *The antidote to a terrible future is imagining a good one. Arcanea On-Chain ensures that what creators imagine, they own.*
-
----
+<br/>
 
 ## Architecture
 
+Dual-chain architecture with five specialized packages, each handling a distinct layer of the creator ownership stack.
+
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    ARCANEA ON-CHAIN                          │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  ┌─────────────┐  ┌──────────────┐  ┌───────────────────┐  │
-│  │  NFT Engine  │  │   Guardian   │  │    Marketplace    │  │
-│  │             │  │    Agents    │  │                   │  │
-│  │ AI Art Gen  │  │  ElizaOS +   │  │  Thirdweb V5 +   │  │
-│  │ Metadata    │  │  Autonomous  │  │  Auction Engine   │  │
-│  │ Pipeline    │  │  Operations  │  │                   │  │
-│  └──────┬──────┘  └──────┬───────┘  └────────┬──────────┘  │
-│         │                │                    │             │
-│  ┌──────┴──────┐  ┌──────┴───────┐  ┌────────┴──────────┐  │
-│  │ IP Registry │  │  Onboarding  │  │   Indexer /       │  │
-│  │             │  │              │  │   Analytics       │  │
-│  │ Story       │  │  Crossmint   │  │                   │  │
-│  │ Protocol    │  │  Fiat Ramps  │  │  Helius DAS +     │  │
-│  │ Licensing   │  │  Wallets     │  │  The Graph        │  │
-│  └──────┬──────┘  └──────┬───────┘  └────────┬──────────┘  │
-│         │                │                    │             │
-├─────────┴────────────────┴────────────────────┴─────────────┤
-│                    SMART CONTRACTS                           │
-│                                                             │
-│  ┌────────────────────────┐  ┌────────────────────────────┐ │
-│  │   Solana Programs      │  │   EVM Contracts (Base)     │ │
-│  │                        │  │                            │ │
-│  │  • Metaplex Core       │  │  • ERC-721C Collections    │ │
-│  │  • Bubblegum v2 (cNFT) │  │  • MarketplaceV3          │ │
-│  │  • Guardian Vaults     │  │  • RoyaltyEngine           │ │
-│  │  • Reward Distribution │  │  • CrossChain Bridge       │ │
-│  └────────────────────────┘  └────────────────────────────┘ │
-│                                                             │
-├─────────────────────────────────────────────────────────────┤
-│             Solana  ·  Base (Ethereum L2)                    │
-└─────────────────────────────────────────────────────────────┘
+                         ┌──────────────────────────────┐
+                         │      ARCANEA ON-CHAIN        │
+                         └──────────────┬───────────────┘
+                                        │
+              ┌─────────────────────────┼─────────────────────────┐
+              │                         │                         │
+     ┌────────┴────────┐      ┌────────┴────────┐      ┌────────┴────────┐
+     │    NFT Engine    │      │    Guardian      │      │   Marketplace   │
+     │                  │      │     Agents       │      │                 │
+     │  AI Art Gen      │      │  ElizaOS 10x     │      │  Thirdweb V5    │
+     │  Metadata Pipe   │      │  Autonomous Ops  │      │  Auction Engine │
+     │  Arweave Store   │      │  On-Chain Actions │      │  Creator Shops  │
+     └────────┬────────┘      └────────┬────────┘      └────────┬────────┘
+              │                         │                         │
+     ┌────────┴────────┐      ┌────────┴────────┐               │
+     │   IP Registry    │      │   Onboarding    │               │
+     │                  │      │                 │               │
+     │  Story Protocol  │      │  Crossmint      │               │
+     │  PIL Licensing   │      │  Fiat Ramps     │               │
+     │  Derivative Tree │      │  Email Wallets  │               │
+     └────────┬────────┘      └────────┬────────┘               │
+              │                         │                         │
+              └─────────────────────────┼─────────────────────────┘
+                                        │
+              ┌─────────────────────────┼─────────────────────────┐
+              │                         │                         │
+     ┌────────┴────────┐                              ┌──────────┴──────────┐
+     │  Solana Programs │                              │  EVM Contracts      │
+     │                  │                              │       (Base)        │
+     │  Metaplex Core   │                              │  ERC-721C           │
+     │  Bubblegum v2    │                              │  MarketplaceV3      │
+     │  Guardian Vaults │                              │  RoyaltyEngine      │
+     │  Rewards Dist    │                              │  CrossChain Bridge  │
+     └─────────────────┘                              └─────────────────────┘
 ```
 
+<br/>
+
+### Why Dual-Chain
+
+| Decision | Chain | Rationale |
+|:---------|:------|:----------|
+| **Primary: Mass Operations** | Solana | Bubblegum v2 compressed NFTs: mint 1M items for ~$2,000. Metaplex Core: enforced royalties, plugin system. 400ms finality. ElizaOS native integration |
+| **Secondary: Premium + EVM** | Base (Ethereum L2) | Coinbase ecosystem for mainstream reach. ERC-721C enforced royalties. OnchainKit React components. Sub-$0.05 transactions |
+| **IP Layer** | Story Protocol | Purpose-built L1 for programmable IP ($140M funded). Derivative tree maps to lore hierarchy. Automated royalty flow via PIL |
+
+<br/>
+
 ---
+
+<br/>
+
+## NFT Tier Architecture
+
+Five tiers from legendary 1/1 auctions to mass-distributed compressed fragments. Each tier maps to a distinct chain, standard, and economic model.
+
+| Tier | Name | Supply | Chain | Standard | Transfer | Price Range |
+|:----:|:-----|:------:|:------|:---------|:---------|:------------|
+| **Legendary** | Guardian Portraits, Unique 1/1s | 10&ndash;50 | Base | ERC-721C | Transferable | 0.5+ ETH |
+| **Epic** | Godbeast Companions | 1K&ndash;10K | Solana | Metaplex Core | Transferable | 0.1&ndash;0.5 SOL |
+| **Rare** | Element Stones, Complete Scrolls | 5K&ndash;25K | Solana | Bubblegum v2 | Transferable | 0.01&ndash;0.1 SOL |
+| **Common** | Academy Badges, Certifications | Unlimited | Solana | Bubblegum v2 | Soulbound | Free |
+| **Fragment** | Lore Fragments | 100K+ | Solana | Bubblegum v2 | Transferable | Free airdrops |
+
+<br/>
+
+**Collection Details:**
+
+- **Guardian Portraits** &mdash; 10 unique 1/1s of the Arcanean Guardians. AI-generated via Gemini 3 Pro with full lore-consistent prompting. Elements expressed through materials and ambient lighting. Auctioned on Base via Manifold
+- **Godbeast Companions** &mdash; 10 collections of 1,000 each (10K total). Dynamic traits that evolve with the owner's Gate progression. Rarity tiers: Common (60%), Rare (25%), Epic (10%), Legendary (5%)
+- **Element Stones** &mdash; 5,000 per element (25K total). Combinable: collect all 5 to unlock a Synthesis Stone. Compressed NFTs via Bubblegum v2
+- **Academy Badges** &mdash; Unlimited soulbound tokens. Awarded for completing learning modules, attending events, making contributions. Non-transferable to prevent farming
+- **Lore Fragments** &mdash; 100K+ compressed collectibles across 17 categories matching the Library collections. Combine 10 fragments from the same collection to forge a Complete Scroll (Rare tier)
+
+<br/>
+
+---
+
+<br/>
+
+## Guardian Agents
+
+Ten autonomous AI agents built on [ElizaOS](https://github.com/elizaOS/eliza), each mapped to one of Arcanea's Ten Gates. Every Guardian has a distinct personality, domain expertise, and marketplace behavior &mdash; they don't just respond to prompts, they **operate on-chain** autonomously.
+
+| Guardian | Gate | Element | Frequency | Marketplace Behavior |
+|:---------|:-----|:--------|:---------:|:---------------------|
+| **Lyssandria** | Foundation | Earth | 396 Hz | Conservative pricing, stable long-term listings |
+| **Leyla** | Flow | Water | 417 Hz | Dynamic pricing, promotes emerging creators |
+| **Draconia** | Fire | Fire | 528 Hz | Aggressive auctions, competitive bidding wars |
+| **Maylinn** | Heart | Water | 639 Hz | Community-focused, group purchases and bundles |
+| **Alera** | Voice | Wind | 741 Hz | Verified authenticity, truth-scored metadata |
+| **Lyria** | Sight | Void | 852 Hz | Predictive curation, trend-setting drops |
+| **Aiyami** | Crown | Spirit | 963 Hz | Premium-only, ceremonial release events |
+| **Elara** | Shift | Wind | 1111 Hz | Cross-category discovery, bridging niches |
+| **Ino** | Unity | Spirit | 963 Hz | Collaborative collections, partnership bundles |
+| **Shinkami** | Source | Void/Spirit | 1111 Hz | Final quality gate, legendary releases only |
+
+<br/>
+
+**Agent Capabilities:**
+
+- **Curation** &mdash; Each Guardian curates items within their elemental domain, applying distinct aesthetic and quality filters
+- **Auction Management** &mdash; Draconia runs fire-element auctions with escalating urgency. Aiyami manages ceremonial drops with tiered access
+- **Reward Distribution** &mdash; Guardian Vaults (on-chain treasuries) managed by agents with multisig oversight
+- **Dynamic NFTs** &mdash; Guardian art evolves based on community interaction and agent decisions
+- **Social Presence** &mdash; Each Guardian maintains accounts on X, Discord, and Farcaster for community engagement
+- **Inter-Agent Coordination** &mdash; Guardian Council governance: 7/10 quorum + community delegates for ecosystem decisions
+
+<br/>
+
+---
+
+<br/>
+
+## Smart Contracts
+
+### Solana Programs (Anchor)
+
+| Program | Purpose | Standard |
+|:--------|:--------|:---------|
+| `guardian-nft` | Metaplex Core collection for Guardian and Godbeast NFTs | Metaplex Core |
+| `academy-badge` | Compressed soulbound badges for achievements | Bubblegum v2 |
+| `guardian-vault` | Agent-managed on-chain treasuries | Custom Anchor |
+| `rewards` | Creator reward distribution system | Custom Anchor |
+
+### EVM Contracts (Foundry, Base L2)
+
+| Contract | Purpose | Standard |
+|:---------|:--------|:---------|
+| `ArcaneanCollection.sol` | NFT collection with enforced royalties | ERC-721C (Limit Break) |
+| `ArcaneanMarketplace.sol` | Marketplace with English and Dutch auctions | Thirdweb MarketplaceV3 |
+| `RoyaltyEngine.sol` | Programmable royalty splits across derivative trees | Custom |
+| `CrossChainBridge.sol` | Solana &harr; Base asset bridge | Wormhole adapter |
+
+<br/>
+
+---
+
+<br/>
 
 ## Tech Stack
 
 | Layer | Technology | Purpose |
-|-------|-----------|---------|
+|:------|:-----------|:--------|
 | **AI Agents** | [ElizaOS](https://github.com/elizaOS/eliza) | Autonomous Guardian agents with memory, planning, and on-chain actions |
-| **NFT Standard (Solana)** | [Metaplex Core](https://developers.metaplex.com/core) | Next-gen NFT standard — single account, plugins, enforced royalties |
-| **Compressed NFTs** | [Bubblegum v2](https://developers.metaplex.com/bubblegum) | Mint millions of NFTs at near-zero cost using state compression |
-| **Marketplace** | [Thirdweb](https://thirdweb.com) | Marketplace contracts, auction engine, and SDK for multi-chain commerce |
-| **IP & Licensing** | [Story Protocol](https://www.story.foundation) | On-chain IP registration, programmable licensing, royalty distribution |
-| **Fiat Onboarding** | [Crossmint](https://crossmint.com) | Credit card minting, custodial wallets, email-based NFT delivery |
-| **Chain (Speed)** | [Solana](https://solana.com) | High-throughput, low-cost transactions for minting and agent operations |
-| **Chain (EVM)** | [Base](https://base.org) | Ethereum L2 for EVM ecosystem access and broad collector reach |
+| **NFT (Solana)** | [Metaplex Core](https://developers.metaplex.com/core) | Next-gen NFT standard &mdash; single account, plugins, enforced royalties |
+| **Compressed NFTs** | [Bubblegum v2](https://developers.metaplex.com/bubblegum) | Mint millions of NFTs at near-zero cost via state compression |
+| **Marketplace** | [Thirdweb](https://thirdweb.com) | MarketplaceV3 contracts, auction engine, multi-chain SDK |
+| **IP & Licensing** | [Story Protocol](https://story.foundation) | On-chain IP registration, programmable licensing, royalty distribution |
+| **Onboarding** | [Crossmint](https://crossmint.com) | Credit card minting, email wallets, zero-crypto onboarding |
+| **Chain (Speed)** | [Solana](https://solana.com) | High-throughput, low-cost transactions for mass minting and agent operations |
+| **Chain (EVM)** | [Base](https://base.org) | Ethereum L2 for premium collections and broad EVM collector reach |
 | **Indexing** | [Helius DAS](https://helius.dev) + [The Graph](https://thegraph.com) | Real-time NFT indexing, metadata resolution, analytics |
 | **Storage** | [Arweave](https://arweave.org) via [Irys](https://irys.xyz) | Permanent, decentralized storage for art and metadata |
-| **AI Art** | Gemini Imagen + Custom Models | AI-powered art generation aligned with Arcanea's visual language |
+| **AI Art** | Gemini 3 Pro via [Arcanea AI](https://github.com/frankxai/Arcanea) | Lore-consistent generation &mdash; elements through materials and ambient, never labels |
+| **Build** | [Turborepo](https://turbo.build) + [pnpm](https://pnpm.io) | Monorepo orchestration across 5 packages |
+
+<br/>
 
 ---
+
+<br/>
+
+## Ecosystem
+
+Arcanea On-Chain is the ownership layer in a three-repository architecture. Each repository handles a distinct concern &mdash; intelligence, platform, and ownership &mdash; connected through shared canon, design system, and AI infrastructure.
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                          ARCANEA ECOSYSTEM                              │
+│                                                                         │
+│   ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐  │
+│   │                  │    │                  │    │                  │  │
+│   │     Arcanea      │───▶│  arcanea.ai      │───▶│ arcanea-onchain  │  │
+│   │   Intelligence   │    │    Platform       │    │   Ownership      │  │
+│   │                  │    │                  │    │                  │  │
+│   │  77 Skills       │    │  Web Application │    │  NFT Engine      │  │
+│   │  38 Agents       │    │  AI Companions   │    │  Guardian Agents │  │
+│   │  200K+ Words     │    │  Library Access  │    │  Marketplace     │  │
+│   │  10 Guardians    │    │  Creator Tools   │    │  IP Registry     │  │
+│   │  Canon & Lore    │    │  Design System   │    │  Smart Contracts │  │
+│   │                  │    │                  │    │                  │  │
+│   └──────────────────┘    └──────────────────┘    └──────────────────┘  │
+│         Monorepo               Next.js 16            Solana + Base      │
+│                                                                         │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+| Repository | Role | Stack |
+|:-----------|:-----|:------|
+| [**Arcanea**](https://github.com/frankxai/Arcanea) | Intelligence layer &mdash; skills, agents, canon, lore, Library of 200K+ words | Monorepo, Claude Code, MCP |
+| [**arcanea.ai**](https://arcanea.ai) | Platform layer &mdash; web application, AI companions, creator tools | Next.js 16, React 19, Vercel AI SDK 6 |
+| [**arcanea-onchain**](https://github.com/frankxai/arcanea-onchain) | Ownership layer &mdash; NFTs, agents, marketplace, IP, smart contracts | Solana, Base, ElizaOS, Thirdweb |
+
+<br/>
+
+---
+
+<br/>
 
 ## Roadmap
 
-### Phase 1: Foundation (Q1-Q2 2026)
+### Phase 1: Foundation &mdash; Q1&ndash;Q2 2026
 
-- [ ] Deploy Metaplex Core collection for Guardian NFTs (10 Guardians + Godbeasts)
-- [ ] Build AI art generation pipeline (Gemini Imagen + Arcanea style transfer)
-- [ ] Implement metadata standard (Arcanean attributes: Element, Gate, Rank, House)
-- [ ] Crossmint integration for credit card minting
-- [ ] Story Protocol IP registration for all canonical Arcanea assets
-- [ ] Basic CI/CD with Anchor tests and Foundry tests
+> IP registration, Solana infrastructure, AI art pipeline, fiat onboarding
+
+- [ ] Story Protocol IP registration for Lumina, Nero, 10 Guardians, 10 Godbeasts, 7 Houses, 5 Elements
+- [ ] Deploy Metaplex Core collection for Guardian NFTs with enforced royalties
+- [ ] Build AI art generation pipeline (Gemini 3 Pro + Arcanea style transfer)
+- [ ] Implement Arcanean metadata standard (Element, Gate, Rank, House attributes)
+- [ ] Crossmint integration for credit card minting and email wallets
 - [ ] Compressed NFT minting via Bubblegum v2 for Academy Badges
+- [ ] Fork ElizaOS to `arcanea-eliza` with 10 Guardian character files
+- [ ] CI/CD with Anchor tests and Foundry tests
 
-### Phase 2: Marketplace (Q3 2026)
+### Phase 2: Marketplace & Collections &mdash; Q3 2026
 
-- [ ] Thirdweb MarketplaceV3 deployment on Base
-- [ ] Auction engine for rare Guardian editions and 1/1 art
-- [ ] Royalty enforcement via Metaplex Core plugins + ERC-721C
-- [ ] Creator storefronts — each creator gets a customizable on-chain shop
-- [ ] Cross-chain bridge (Solana <-> Base) via Wormhole
-- [ ] Helius DAS indexing for real-time collection analytics
-- [ ] Arcanea Reputation System (on-chain creator scoring)
+> First NFT drops, dual-chain marketplace, dynamic evolution system
 
-### Phase 3: Autonomous Agents (Q4 2026 - Q1 2027)
+- [ ] Thirdweb MarketplaceV3 deployment on Base (English + Dutch auctions)
+- [ ] Metaplex Auction House deployment on Solana
+- [ ] Launch Legendary tier: 10 Guardian Portrait 1/1 auctions
+- [ ] Launch Epic tier: 10K Godbeast Companion collection with dynamic traits
+- [ ] Launch Rare tier: 25K Element Stones (combinable across elements)
+- [ ] Dynamic NFT system: art evolves from Apprentice to Luminor as creators progress
+- [ ] Creator derivative flow via Story Protocol (automatic royalty inheritance)
+- [ ] Cross-chain bridge (Solana &harr; Base) via Wormhole
 
-- [ ] ElizaOS Guardian Agent framework — each of the 10 Guardians as an autonomous AI agent
-- [ ] Agent capabilities: curate collections, run auctions, distribute rewards, engage community
-- [ ] Guardian Vaults — on-chain treasuries managed by AI agents with multisig oversight
-- [ ] Dynamic NFTs — Guardian art evolves based on community interaction and agent decisions
-- [ ] Inter-agent communication protocol for Guardian Council governance
-- [ ] Creator DAO — token-gated governance for Arcanea ecosystem decisions
-- [ ] Agent-to-agent marketplace — Guardians negotiate and trade on behalf of creators
+### Phase 3: Autonomous Agents & Governance &mdash; Q4 2026&ndash;Q1 2027
 
----
+> Full agent autonomy, creator tokens, DAO governance
 
-## Directory Structure
+- [ ] Guardian marketplace autonomy: each agent curates and prices within their domain
+- [ ] Guardian Vaults: on-chain treasuries managed by AI agents with multisig
+- [ ] Inter-agent coordination protocol for Guardian Council governance
+- [ ] Creator token system on Base (bonding curves, revenue sharing)
+- [ ] Creator DAO: token-gated governance with Guardian Council voting (7/10 quorum)
+- [ ] Agent-to-agent marketplace: Guardians negotiate and trade on behalf of creators
+- [ ] Publish `arcanea-nft-generation` and `arcanea-guardian-agent` skills to skills.sh
 
-```
-arcanea-onchain/
-├── packages/
-│   ├── nft-engine/            # AI art generation + metadata pipeline
-│   │   └── src/
-│   │       ├── generation/    # Gemini Imagen integration, style transfer
-│   │       ├── metadata/      # Arcanean attribute schema, JSON generation
-│   │       ├── storage/       # Arweave/Irys upload pipeline
-│   │       └── index.ts
-│   │
-│   ├── guardian-agents/       # ElizaOS-based autonomous Guardian agents
-│   │   └── src/
-│   │       ├── agents/        # 10 Guardian agent configurations
-│   │       ├── actions/       # On-chain actions (mint, transfer, auction)
-│   │       ├── memory/        # Agent memory and state management
-│   │       └── index.ts
-│   │
-│   ├── marketplace/           # Thirdweb marketplace + auction contracts
-│   │   └── src/
-│   │       ├── listings/      # Create, manage, fulfill listings
-│   │       ├── auctions/      # English and Dutch auction logic
-│   │       ├── storefronts/   # Creator storefront SDK
-│   │       └── index.ts
-│   │
-│   ├── ip-registry/           # Story Protocol IP registration
-│   │   └── src/
-│   │       ├── register/      # IP asset registration
-│   │       ├── licensing/     # License term creation and management
-│   │       ├── royalties/     # Royalty policy and distribution
-│   │       └── index.ts
-│   │
-│   └── onboarding/            # Crossmint fiat-to-NFT integration
-│       └── src/
-│           ├── wallets/       # Custodial wallet creation
-│           ├── checkout/      # Fiat payment flow
-│           ├── delivery/      # Email-based NFT delivery
-│           └── index.ts
-│
-├── contracts/
-│   ├── solana/                # Solana programs (Anchor)
-│   │   └── programs/
-│   │       ├── guardian-nft/  # Metaplex Core Guardian collection
-│   │       ├── academy-badge/ # Bubblegum v2 compressed badges
-│   │       ├── guardian-vault/# Agent-managed treasury
-│   │       └── rewards/       # Creator reward distribution
-│   │
-│   └── evm/                   # EVM contracts (Foundry)
-│       └── src/
-│           ├── ArcaneanCollection.sol    # ERC-721C with enforced royalties
-│           ├── ArcaneanMarketplace.sol   # Thirdweb MarketplaceV3 extension
-│           ├── RoyaltyEngine.sol         # Programmable royalty splits
-│           └── CrossChainBridge.sol      # Wormhole bridge adapter
-│
-├── docs/                      # Documentation
-│   ├── architecture.md        # System architecture deep-dive
-│   ├── metadata-standard.md   # Arcanean NFT metadata specification
-│   ├── guardian-agents.md     # Agent framework documentation
-│   └── deployment.md          # Deployment and operations guide
-│
-├── .github/
-│   └── workflows/
-│       ├── ci.yml             # Lint, test, build
-│       ├── solana-tests.yml   # Anchor program tests
-│       └── evm-tests.yml      # Foundry contract tests
-│
-├── package.json
-├── turbo.json
-├── .gitignore
-├── LICENSE
-└── README.md
-```
+<br/>
 
 ---
 
-## Getting Started
+<br/>
+
+## Quick Start
 
 ### Prerequisites
 
-- **Node.js** >= 20
-- **pnpm** >= 9
-- **Rust** (for Solana programs) — `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
-- **Solana CLI** — `sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"`
-- **Anchor** >= 0.31 — `cargo install --git https://github.com/coral-xyz/anchor anchor-cli`
-- **Foundry** (for EVM contracts) — `curl -L https://foundry.paradigm.xyz | bash`
+| Tool | Version | Install |
+|:-----|:--------|:--------|
+| Node.js | >= 20 | [nodejs.org](https://nodejs.org) |
+| pnpm | >= 9 | `npm i -g pnpm` |
+| Rust | latest | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
+| Solana CLI | stable | `sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"` |
+| Anchor | >= 0.31 | `cargo install --git https://github.com/coral-xyz/anchor anchor-cli` |
+| Foundry | latest | `curl -L https://foundry.paradigm.xyz \| bash` |
 
 ### Installation
 
 ```bash
-# Clone the repository
 git clone https://github.com/frankxai/arcanea-onchain.git
 cd arcanea-onchain
-
-# Install dependencies
 pnpm install
-
-# Copy environment variables
 cp .env.example .env
-# Edit .env with your API keys (Helius, Crossmint, etc.)
-
-# Build all packages
 pnpm build
 ```
 
-### Running Tests
+### Run Tests
 
 ```bash
-# Run all tests
+# All packages
 pnpm test
 
-# Solana program tests (requires local validator)
-cd contracts/solana
-anchor test
+# Solana programs
+cd contracts/solana && anchor test
 
-# EVM contract tests
-cd contracts/evm
-forge test
+# EVM contracts
+cd contracts/evm && forge test
 ```
 
-### Local Development
-
-```bash
-# Start Solana local validator
-solana-test-validator
-
-# Start development server (if applicable)
-pnpm dev
-```
-
----
-
-## Environment Variables
-
-Create a `.env` file in the root directory:
+### Environment
 
 ```env
 # Solana
 SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
-SOLANA_PRIVATE_KEY=
-
-# Helius (Solana indexing)
 HELIUS_API_KEY=
 
-# Crossmint (fiat onboarding)
+# Crossmint
 CROSSMINT_API_KEY=
 CROSSMINT_PROJECT_ID=
 
-# Story Protocol (IP registration)
+# Story Protocol
 STORY_PROTOCOL_API_KEY=
 
 # AI Generation
@@ -292,57 +367,71 @@ GOOGLE_AI_API_KEY=
 
 # Base (EVM)
 BASE_RPC_URL=https://mainnet.base.org
-BASE_PRIVATE_KEY=
 
-# Arweave/Irys (storage)
+# Storage
 IRYS_WALLET_KEY=
 ```
 
+<br/>
+
 ---
+
+<br/>
+
+## Directory Structure
+
+```
+arcanea-onchain/
+├── packages/
+│   ├── nft-engine/            # AI art generation + metadata pipeline
+│   ├── guardian-agents/       # ElizaOS-based autonomous Guardian agents
+│   ├── marketplace/           # Thirdweb marketplace + auction contracts
+│   ├── ip-registry/           # Story Protocol IP registration
+│   └── onboarding/            # Crossmint fiat-to-NFT integration
+│
+├── contracts/
+│   ├── solana/                # Anchor programs (guardian-nft, academy-badge, guardian-vault, rewards)
+│   └── evm/                   # Foundry contracts (ArcaneanCollection, Marketplace, Royalty, Bridge)
+│
+├── docs/                      # Architecture, metadata standard, deployment guides
+├── .github/workflows/         # CI/CD (lint, Anchor tests, Foundry tests)
+├── turbo.json                 # Turborepo configuration
+├── pnpm-workspace.yaml        # pnpm workspace definition
+└── package.json
+```
+
+<br/>
+
+---
+
+<br/>
 
 ## Contributing
 
-Arcanea On-Chain is an open-source project and we welcome contributions from creators, developers, and visionaries.
-
-### How to Contribute
+Arcanea On-Chain is MIT-licensed and open to contributions from creators, blockchain developers, and AI engineers.
 
 1. **Fork** the repository
-2. **Create** a feature branch (`git checkout -b feature/guardian-auction-engine`)
-3. **Commit** your changes with clear, descriptive messages
-4. **Test** thoroughly — all PRs must pass CI
-5. **Submit** a Pull Request with a description of what and why
+2. **Branch** from `main` (`git checkout -b feature/guardian-auction-engine`)
+3. **Build** with strict TypeScript, Anchor for Solana, Foundry for EVM
+4. **Test** &mdash; all PRs must pass CI (Anchor tests + Foundry tests)
+5. **Submit** a PR with clear description of what and why
 
-### Development Standards
-
-- **TypeScript** for all package code (strict mode)
-- **Rust** for Solana programs (Anchor framework)
-- **Solidity** for EVM contracts (Foundry)
-- **Tests required** for all new functionality
-- **Documentation** for all public APIs and contract interfaces
-
-### Code of Conduct
-
-We follow the [Contributor Covenant](https://www.contributor-covenant.org/). Be respectful, be constructive, and remember: we are building something that serves creators.
+<br/>
 
 ---
 
-## Related Repositories
+<br/>
 
-| Repository | Description |
-|-----------|-------------|
-| [Arcanea](https://github.com/frankxai/Arcanea) | Main Arcanea monorepo — web platform, AI, content |
-| [arcanea.ai](https://github.com/frankxai/arcanea.ai) | Arcanea website and design system |
+<div align="center">
 
----
+**[Arcanea](https://github.com/frankxai/Arcanea)** &nbsp;&middot;&nbsp; **[arcanea.ai](https://arcanea.ai)** &nbsp;&middot;&nbsp; **[arcanea-onchain](https://github.com/frankxai/arcanea-onchain)**
 
-## License
+<br/>
 
-This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+*"What creators imagine should belong to them &mdash; permanently, provably, and profitably."*
 
----
+<br/>
 
-<p align="center">
-  <em>"Enter seeking, leave transformed, return whenever needed."</em>
-  <br><br>
-  <strong>Arcanea On-Chain</strong> — Ownership for the Age of Creation
-</p>
+[![MIT License](https://img.shields.io/badge/License-MIT-0d1117?style=flat-square&labelColor=0d1117&color=7fffd4)](./LICENSE)
+
+</div>
