@@ -1,11 +1,47 @@
 <p align="center">
   <strong>⟡ Arcanea On-Chain</strong><br/>
-  <em>Blockchain IP & Creator Economy Infrastructure</em>
+  <em>Blockchain IP &amp; Creator Economy Infrastructure</em>
 </p>
 
 <p align="center">
   <a href="https://arcanea.ai">arcanea.ai</a> · <a href="https://github.com/frankxai/Arcanea">Monorepo</a> · <a href="https://github.com/frankxai/Starlight-Intelligence-System">SIS</a> · <a href="https://github.com/frankxai/arcanea-realm">Arcanea Realm</a>
 </p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow?style=flat-square&logo=opensourceinitiative" alt="MIT License" /></a>
+  <img src="https://img.shields.io/badge/status-architecture--phase-orange?style=flat-square" alt="Architecture Phase" />
+  <a href="https://arcanea.ai"><img src="https://img.shields.io/badge/Arcanea-Ecosystem-7fffd4?style=flat-square" alt="Arcanea Ecosystem" /></a>
+</p>
+
+---
+
+## Quick Start
+
+The project is currently in the architecture and research phase — no production packages are published yet. To explore the planned structure:
+
+```bash
+git clone https://github.com/frankxai/arcanea-onchain.git
+cd arcanea-onchain
+pnpm install
+```
+
+Browse the `docs/` directory for architecture documents and the `contracts/` directory for planned smart contract interfaces. Implementation begins once `@arcanea/core` reaches stable release.
+
+When the SDK is available:
+
+```typescript
+import { ArcaneaVault } from '@arcanea/onchain';
+
+// Mint a creative work as a compressed NFT
+const vault = new ArcaneaVault({ network: 'mainnet-beta' });
+await vault.mint({
+  title: 'My Creative Work',
+  creator: walletAddress,
+  element: 'fire',
+  gate: 'Voice',
+  licenseType: 'cc-by-sa',
+});
+```
 
 ---
 
@@ -104,8 +140,15 @@ This repository currently contains research, architecture documents, and strateg
 |-----------|---------|
 | [**Arcanea**](https://github.com/frankxai/Arcanea) | Monorepo — core SDK, CLI, MCP server, platform |
 | [**Arcanea Realm**](https://github.com/frankxai/arcanea-realm) | Standalone AI CLI (OpenCode fork with Guardian intelligence) |
-| [**Starlight Intelligence System**](https://github.com/frankxai/Starlight-Intelligence-System) | Persistent context & memory layer for AI agents |
-| [**Arcanea On-Chain**](https://github.com/frankxai/arcanea-onchain) | Blockchain IP & creator economy infrastructure (this repo) |
+| [**Arcanea Vault**](https://github.com/frankxai/arcanea-vault) | Chrome extension — export AI conversations, images, and prompts from any platform |
+| [**Starlight Intelligence System**](https://github.com/frankxai/Starlight-Intelligence-System) | Persistent context and memory layer for AI agents |
+| [**Arcanea On-Chain**](https://github.com/frankxai/arcanea-onchain) | Blockchain IP and creator economy infrastructure (this repo) |
+
+The on-chain layer is designed to work alongside the rest of the ecosystem:
+
+- **Arcanea Vault** captures creative works from AI tools — Arcanea On-Chain mints them as permanent, ownable NFTs
+- **Arcanea Realm** generates creative content — On-Chain provides IP registration for that output
+- **Arcanea platform** (arcanea.ai) surfaces creator portfolios — On-Chain makes those portfolios verifiable and tradeable
 
 ---
 
