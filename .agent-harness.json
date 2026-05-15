@@ -1,0 +1,11 @@
+{
+  "risk": "library",
+  "health": "pnpm test",
+  "agentFiles": [
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".codex/instructions.md"
+  ],
+  "deployPolicy": "manual",
+  "globalHooksAllowed": false
+}
