@@ -15,6 +15,10 @@
 
 ---
 
+![Arcanea On-Chain Web3 Hero](.github/assets/arcanea-onchain-web3-hero.jpg)
+
+> Premium web3 cosmic hero (Guardian sovereignty + Metaplex NFT + Story IP chains) per ARCANEA_VISUAL_ECOSYSTEM + full VISUAL_DOCTRINE (Starlight Corps grammar) + TASTE 7 gates + DESIGN tokens (teal/gold/void). God-mode 2026-06-16.
+
 ## Quick Start
 
 The project is currently in the architecture and research phase — no production packages are published yet. To explore the planned structure:
@@ -150,13 +154,13 @@ The on-chain layer is designed to work alongside the rest of the ecosystem:
 - **Arcanea Realm** generates creative content — On-Chain provides IP registration for that output
 - **Arcanea platform** (arcanea.ai) surfaces creator portfolios — On-Chain makes those portfolios verifiable and tradeable
 
----
+## Visual Ecosystem
+
+See root monorepo [.github/ARCANEA_VISUAL_ECOSYSTEM.md](https://github.com/frankxai/arcanea/blob/main/.github/ARCANEA_VISUAL_ECOSYSTEM.md) and plan for full god-mode assets (heroes, web3 previews, ecosystem map). All per DESIGN/TASTE/VISUAL_DOCTRINE.
 
 ## Contributing
 
 This project is in early architecture phase. If you're interested in the intersection of AI, creator tools, and blockchain infrastructure, open an issue or reach out.
-
----
 
 ## License
 
