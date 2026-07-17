@@ -1,0 +1,21 @@
+node_modules
+artifacts
+cache
+coverage
+coverage.json
+typechain-types
+.env
+.env*.local
+npm-debug.log*
+
+# Standard VCS-rescue exclusions
+*.local
+dist/
+.next/
+build/
+__pycache__/
+.venv/
+*.key
+*.pem
+credentials*
+*token*.json
