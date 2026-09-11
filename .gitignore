@@ -33,6 +33,11 @@ test-ledger/
 contracts/evm/cache/
 contracts/evm/out/
 
+# Generated Hardhat compiler output and TypeChain bindings
+/artifacts/
+/cache/solidity-files-cache.json
+/typechain-types/
+
 # Coverage
 coverage/
 lcov.info
