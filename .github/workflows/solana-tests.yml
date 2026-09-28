@@ -5,27 +5,52 @@ on:
     branches: [main]
     paths:
       - 'contracts/solana/**'
+      - '.github/workflows/solana-tests.yml'
   pull_request:
     branches: [main]
     paths:
       - 'contracts/solana/**'
+      - '.github/workflows/solana-tests.yml'
+  workflow_dispatch:
 
 jobs:
   anchor-test:
     name: Anchor Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: contracts/solana
     steps:
       - uses: actions/checkout@v4
 
+      # rustflags: '' — the action defaults RUSTFLAGS to "-D warnings", which
+      # turns the programs' existing warnings into IDL-build failures.
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
+          rustflags: ''
+          cache-workspaces: contracts/solana
 
       - uses: metadaoproject/setup-anchor@v1
         with:
-          anchor-version: '0.31.0'
-          solana-cli-version: '2.1.0'
+          anchor-version: '0.31.1'
+          solana-cli-version: '2.1.21'
+          node-version: '20'
+
+      - name: Create throwaway localnet wallet
+        run: solana-keygen new --no-bip39-passphrase --silent --force -o ~/.config/solana/id.json
+
+      - name: Install test dependencies
+        run: npm ci
+
+      # Program keypairs are generated per run and never committed. Syncing
+      # points declare_id!/Anchor.toml at them so localnet deploys match.
+      - name: Build and sync program IDs
+        run: |
+          anchor build
+          anchor keys sync
+          git diff --stat
 
       - name: Run Anchor tests
-        working-directory: contracts/solana
         run: anchor test

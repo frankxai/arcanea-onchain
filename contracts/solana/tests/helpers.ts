@@ -1,0 +1,29 @@
+import * as anchor from "@coral-xyz/anchor";
+import { expect } from "chai";
+
+export const provider = anchor.AnchorProvider.env();
+anchor.setProvider(provider);
+
+export const LAMPORTS = anchor.web3.LAMPORTS_PER_SOL;
+
+export async function airdrop(to: anchor.web3.PublicKey, sol: number): Promise<void> {
+  const sig = await provider.connection.requestAirdrop(to, sol * LAMPORTS);
+  const latest = await provider.connection.getLatestBlockhash();
+  await provider.connection.confirmTransaction({ signature: sig, ...latest }, "confirmed");
+}
+
+export async function balance(of: anchor.web3.PublicKey): Promise<number> {
+  return provider.connection.getBalance(of, "confirmed");
+}
+
+/** Assert that `p` rejects with the given Anchor error code name. */
+export async function expectAnchorError(p: Promise<unknown>, code: string): Promise<void> {
+  try {
+    await p;
+  } catch (e: any) {
+    const actual = e?.error?.errorCode?.code ?? String(e);
+    expect(actual).to.contain(code);
+    return;
+  }
+  expect.fail(`expected transaction to fail with ${code}`);
+}

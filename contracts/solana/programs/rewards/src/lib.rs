@@ -245,7 +245,10 @@ pub mod rewards {
     ) -> Result<()> {
         require!(amount > 0, RewardError::ZeroAmount);
 
-        let pool = &mut ctx.accounts.reward_pool;
+        // Read-only view for validation and split math. The mutable borrow is
+        // taken after the lamport moves below, which need their own borrows of
+        // reward_pool's AccountInfo.
+        let pool = &ctx.accounts.reward_pool;
         require!(pool.is_active, RewardError::PoolNotActive);
         require!(
             pool.distributor_authority == ctx.accounts.distributor.key(),
@@ -298,6 +301,15 @@ pub mod rewards {
         let creator_reward = &mut ctx.accounts.creator_reward;
         let is_new = creator_reward.total_earned == 0;
 
+        // init_if_needed zero-fills a fresh account. Record who it belongs to,
+        // otherwise claim_reward's `creator_reward.creator == creator` check
+        // compares against Pubkey::default() and no creator can ever claim.
+        if creator_reward.creator == Pubkey::default() {
+            creator_reward.creator = ctx.accounts.creator.key();
+            creator_reward.reward_pool = ctx.accounts.reward_pool.key();
+            creator_reward.bump = ctx.bumps.creator_reward;
+        }
+
         creator_reward.total_earned = creator_reward
             .total_earned
             .checked_add(creator_amount)
@@ -313,6 +325,7 @@ pub mod rewards {
         creator_reward.last_distribution = Clock::get()?.unix_timestamp;
 
         // Update pool stats
+        let pool = &mut ctx.accounts.reward_pool;
         pool.total_received = pool
             .total_received
             .checked_add(amount)

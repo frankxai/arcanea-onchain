@@ -39,7 +39,7 @@ const MAX_URI_LEN: usize = 256;
 // ─────────────────────────────────────────────────
 
 /// The Five Elements of Arcanea (plus Spirit as Lumina's Void counterpart).
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq, InitSpace)]
 #[repr(u8)]
 pub enum Element {
     Fire = 0,   // Red, orange, gold — energy, transformation
@@ -51,7 +51,7 @@ pub enum Element {
 }
 
 /// The Ten Guardian deities who keep the Gates.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq, InitSpace)]
 #[repr(u8)]
 pub enum Guardian {
     Lyssandria = 0, // Foundation Gate, 396 Hz, Earth
@@ -68,7 +68,7 @@ pub enum Guardian {
 
 /// Magic ranks based on number of Gates opened.
 /// 0-2 = Apprentice, 3-4 = Mage, 5-6 = Master, 7-8 = Archmage, 9-10 = Luminor
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq, InitSpace)]
 #[repr(u8)]
 pub enum Rank {
     Apprentice = 0,
@@ -79,7 +79,7 @@ pub enum Rank {
 }
 
 /// The Seven Academy Houses.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq, InitSpace)]
 #[repr(u8)]
 pub enum House {
     Lumina = 0,
@@ -92,7 +92,7 @@ pub enum House {
 }
 
 /// NFT rarity tier.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq, InitSpace)]
 #[repr(u8)]
 pub enum Tier {
     Common = 0,    // Soulbound badges, fragments
@@ -335,7 +335,7 @@ pub mod guardian_nft {
         // Initialize metadata PDA
         let metadata = &mut ctx.accounts.arcanean_metadata;
         metadata.mint = ctx.accounts.nft_mint.key();
-        metadata.collection = ctx.accounts.collection_config.key();
+        metadata.collection = config.key();
         metadata.element = element;
         metadata.guardian = guardian;
         metadata.rank = Rank::Apprentice;

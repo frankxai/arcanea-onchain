@@ -41,7 +41,7 @@ const MAX_URI_LEN: usize = 256;
 // ─────────────────────────────────────────────────
 
 /// Badge category determines the type of achievement.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq, InitSpace)]
 #[repr(u8)]
 pub enum BadgeCategory {
     HouseMembership = 0,
@@ -52,7 +52,7 @@ pub enum BadgeCategory {
 }
 
 /// House affiliation for House Membership badges.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq, InitSpace)]
 #[repr(u8)]
 pub enum House {
     Lumina = 0,
@@ -65,7 +65,7 @@ pub enum House {
 }
 
 /// Gate index for Gate Completion badges (0-9 maps to the Ten Gates).
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq, InitSpace)]
 #[repr(u8)]
 pub enum GateIndex {
     Foundation = 0, // 396 Hz — Lyssandria
@@ -81,7 +81,7 @@ pub enum GateIndex {
 }
 
 /// Rank for Rank Advancement badges.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq, InitSpace)]
 #[repr(u8)]
 pub enum Rank {
     Apprentice = 0,

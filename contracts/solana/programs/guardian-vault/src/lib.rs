@@ -23,7 +23,7 @@
 use anchor_lang::prelude::*;
 use anchor_lang::system_program;
 
-declare_id!("GrdVlt1111111111111111111111111111111111111");
+declare_id!("GrdVLt1111111111111111111111111111111111111");
 
 /// Maximum number of multi-sig signers.
 const MAX_SIGNERS: usize = 5;
@@ -672,7 +672,7 @@ pub struct InitializeVault<'info> {
         init,
         payer = admin,
         space = 8 + VaultConfig::INIT_SPACE,
-        seeds = [b"vault", &[guardian_id], admin.key().as_ref()],
+        seeds = [b"vault".as_ref(), &[guardian_id], admin.key().as_ref()],
         bump
     )]
     pub vault_config: Account<'info, VaultConfig>,

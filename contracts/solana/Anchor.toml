@@ -1,12 +1,15 @@
 [features]
-seeds = false
+resolution = true
 skip-lint = false
 
+# Placeholder IDs matching each program's declare_id!. They have never been
+# deployed. CI runs `anchor keys sync` against throwaway keypairs before
+# `anchor test`; real deployment keys are a release decision, not a test input.
 [programs.localnet]
-guardian_nft = "11111111111111111111111111111111"
-academy_badge = "11111111111111111111111111111111"
-guardian_vault = "11111111111111111111111111111111"
-rewards = "11111111111111111111111111111111"
+academy_badge = "AcdBdg1111111111111111111111111111111111111"
+guardian_nft = "GrdNFT1111111111111111111111111111111111111"
+guardian_vault = "GrdVLt1111111111111111111111111111111111111"
+rewards = "RwdPgm1111111111111111111111111111111111111"
 
 [registry]
 url = "https://api.apr.dev"
@@ -16,4 +19,4 @@ cluster = "Localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
-test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+test = "npx ts-mocha -p ./tsconfig.json -t 1000000 'tests/**/*.ts'"
