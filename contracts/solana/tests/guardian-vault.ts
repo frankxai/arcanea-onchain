@@ -2,7 +2,7 @@ import * as anchor from "@coral-xyz/anchor";
 import { Program, BN } from "@coral-xyz/anchor";
 import { expect } from "chai";
 import { GuardianVault } from "../target/types/guardian_vault";
-import { provider, expectAnchorError, balance, LAMPORTS } from "./helpers";
+import { provider, expectAnchorError, balance, fundedKeypair, LAMPORTS } from "./helpers";
 
 describe("guardian-vault", () => {
   const program = anchor.workspace.GuardianVault as Program<GuardianVault>;
@@ -60,5 +60,93 @@ describe("guardian-vault", () => {
   it("rejects spends by anyone but the agent", async () => {
     const outsider = anchor.web3.Keypair.generate();
     await expectAnchorError(spend(0.1, outsider), "UnauthorizedAgent");
+  });
+  // ── Multisig withdrawals: a request belongs to exactly one vault. ──
+  describe("withdrawal requests", () => {
+    const requestFor = (v: anchor.web3.PublicKey, nonce: number) =>
+      anchor.web3.PublicKey.findProgramAddressSync(
+        [Buffer.from("withdrawal"), v.toBuffer(), new BN(nonce).toArrayLike(Buffer, "le", 8)],
+        program.programId
+      )[0];
+    const payee = anchor.web3.Keypair.generate().publicKey;
+
+    const create = (v: anchor.web3.PublicKey, nonce: number, sol: number, to: anchor.web3.PublicKey, who?: anchor.web3.Keypair) => {
+      const b = program.methods
+        .createWithdrawalRequest(new BN(sol * LAMPORTS), new BN(nonce))
+        .accountsPartial({
+          vaultConfig: v,
+          withdrawalRequest: requestFor(v, nonce),
+          destination: to,
+          initiator: who ? who.publicKey : admin,
+        });
+      return who ? b.signers([who]).rpc() : b.rpc();
+    };
+    const approve = (v: anchor.web3.PublicKey, req: anchor.web3.PublicKey, who?: anchor.web3.Keypair) => {
+      const b = program.methods
+        .approveWithdrawal()
+        .accountsPartial({ vaultConfig: v, withdrawalRequest: req, signer: who ? who.publicKey : admin });
+      return who ? b.signers([who]).rpc() : b.rpc();
+    };
+    const execute = (v: anchor.web3.PublicKey, req: anchor.web3.PublicKey, to: anchor.web3.PublicKey, who?: anchor.web3.Keypair) => {
+      const b = program.methods
+        .executeWithdrawal()
+        .accountsPartial({ vaultConfig: v, withdrawalRequest: req, destination: to, executor: who ? who.publicKey : admin });
+      return who ? b.signers([who]).rpc() : b.rpc();
+    };
+
+    it("creates, approves and executes a withdrawal from its own vault", async () => {
+      await create(vault, 1, 0.5, payee);
+      await approve(vault, requestFor(vault, 1));
+      await execute(vault, requestFor(vault, 1), payee);
+
+      expect(await balance(payee)).to.equal(0.5 * LAMPORTS);
+      expect((await program.account.withdrawalRequest.fetch(requestFor(vault, 1))).isExecuted).to.equal(true);
+    });
+
+    it("rejects withdrawal requests from anyone but the agent or a signer", async () => {
+      const outsider = await fundedKeypair(1);
+      await expectAnchorError(create(vault, 2, 0.1, outsider.publicKey, outsider), "UnauthorizedSigner");
+    });
+
+    describe("vault binding (adversarial)", () => {
+      let attacker: anchor.web3.Keypair;
+      let attackerVault: anchor.web3.PublicKey;
+
+      before(async () => {
+        attacker = await fundedKeypair(3);
+        [attackerVault] = anchor.web3.PublicKey.findProgramAddressSync(
+          [Buffer.from("vault"), Buffer.from([guardianId]), attacker.publicKey.toBuffer()],
+          program.programId
+        );
+        // Attacker's own vault: they are the agent and the sole 1-of-1 signer.
+        await program.methods
+          .initialize(guardianId, new BN(1 * LAMPORTS), new BN(1 * LAMPORTS), 1, [attacker.publicKey])
+          .accountsPartial({ vaultConfig: attackerVault, agent: attacker.publicKey, admin: attacker.publicKey })
+          .signers([attacker])
+          .rpc();
+      });
+
+      it("rejects executing an attacker-approved request against a victim vault", async () => {
+        // Request + 1-of-1 approval on the attacker's own vault, paying the attacker...
+        await create(attackerVault, 1, 1, attacker.publicKey, attacker);
+        const req = requestFor(attackerVault, 1);
+        await approve(attackerVault, req, attacker);
+
+        // ...then executed against the victim vault, which would pay it out.
+        const victimBefore = await balance(vault);
+        await expectAnchorError(execute(vault, req, attacker.publicKey, attacker), "VaultMismatch");
+        expect(await balance(vault)).to.equal(victimBefore);
+      });
+
+      it("rejects approving a victim vault's request as a signer of another vault", async () => {
+        await create(vault, 3, 0.25, payee);
+        const req = requestFor(vault, 3);
+
+        await expectAnchorError(approve(attackerVault, req, attacker), "VaultMismatch");
+        const r = await program.account.withdrawalRequest.fetch(req);
+        expect(r.approvalCount).to.equal(0);
+        expect(r.approvalBitmap).to.equal(0);
+      });
+    });
   });
 });

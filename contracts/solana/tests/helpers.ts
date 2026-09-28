@@ -28,3 +28,10 @@ export async function expectAnchorError(p: Promise<unknown>, code: string): Prom
   }
   expect.fail(`expected transaction to fail with ${code}`);
 }
+
+/** A fresh keypair with `sol` SOL airdropped, for playing an independent (often hostile) party. */
+export async function fundedKeypair(sol = 2): Promise<anchor.web3.Keypair> {
+  const kp = anchor.web3.Keypair.generate();
+  await airdrop(kp.publicKey, sol);
+  return kp;
+}

@@ -2,7 +2,7 @@ import * as anchor from "@coral-xyz/anchor";
 import { Program, BN } from "@coral-xyz/anchor";
 import { expect } from "chai";
 import { Rewards } from "../target/types/rewards";
-import { provider, expectAnchorError, balance, airdrop, LAMPORTS } from "./helpers";
+import { provider, expectAnchorError, balance, airdrop, fundedKeypair, LAMPORTS } from "./helpers";
 
 describe("rewards", () => {
   const program = anchor.workspace.Rewards as Program<Rewards>;
@@ -109,5 +109,88 @@ describe("rewards", () => {
         .rpc(),
       "UnauthorizedDistributor"
     );
+  });
+  // ── Adversarial: anyone can create a pool, so a CreatorReward must only ──
+  // ── ever be paid out of the pool that credited it.                      ──
+  describe("pool binding (adversarial)", () => {
+    it("rejects claiming from a victim pool with a CreatorReward credited by an attacker's pool", async () => {
+      const attacker = await fundedKeypair(3);
+      const [attackerPool] = anchor.web3.PublicKey.findProgramAddressSync(
+        [Buffer.from("reward_pool"), attacker.publicKey.toBuffer()],
+        program.programId
+      );
+      const [attackerReward] = anchor.web3.PublicKey.findProgramAddressSync(
+        [Buffer.from("creator_reward"), attackerPool.toBuffer(), attacker.publicKey.toBuffer()],
+        program.programId
+      );
+      const sink = anchor.web3.Keypair.generate().publicKey;
+
+      // Attacker spins up their own pool and credits themselves 0.7 SOL there.
+      await program.methods
+        .initialize(7000, 2000, 1000)
+        .accountsPartial({ rewardPool: attackerPool, guardianVault: sink, communityTreasury: sink, admin: attacker.publicKey })
+        .signers([attacker])
+        .rpc();
+      await program.methods
+        .distribute(new BN(1 * LAMPORTS))
+        .accountsPartial({
+          rewardPool: attackerPool,
+          creatorReward: attackerReward,
+          creator: attacker.publicKey,
+          guardianVault: sink,
+          communityTreasury: sink,
+          distributor: attacker.publicKey,
+        })
+        .signers([attacker])
+        .rpc();
+
+      // The real pool holds funds owed to its own creators.
+      await program.methods.fundPool(new BN(2 * LAMPORTS)).accountsPartial({ rewardPool: pool, funder: admin }).rpc();
+      const poolBefore = await balance(pool);
+
+      // Attacker presents their foreign CreatorReward against the real pool.
+      await expectAnchorError(
+        program.methods
+          .claimReward()
+          .accountsPartial({ rewardPool: pool, creatorReward: attackerReward, creator: attacker.publicKey })
+          .signers([attacker])
+          .rpc(),
+        "PoolMismatch"
+      );
+      expect(await balance(pool)).to.equal(poolBefore);
+
+      // The attacker can still claim what their own pool owes them.
+      await program.methods
+        .claimReward()
+        .accountsPartial({ rewardPool: attackerPool, creatorReward: attackerReward, creator: attacker.publicKey })
+        .signers([attacker])
+        .rpc();
+      expect((await program.account.creatorReward.fetch(attackerReward)).claimable.toNumber()).to.equal(0);
+    });
+
+    it("rejects claiming someone else's CreatorReward", async () => {
+      const thief = await fundedKeypair(1);
+      await program.methods
+        .distribute(new BN(1 * LAMPORTS))
+        .accountsPartial({
+          rewardPool: pool,
+          creatorReward,
+          creator: creator.publicKey,
+          guardianVault,
+          communityTreasury,
+          distributor: admin,
+        })
+        .rpc();
+
+      await expectAnchorError(
+        program.methods
+          .claimReward()
+          .accountsPartial({ rewardPool: pool, creatorReward, creator: thief.publicKey })
+          .signers([thief])
+          .rpc(),
+        "UnauthorizedCreator"
+      );
+      expect((await program.account.creatorReward.fetch(creatorReward)).claimable.toNumber()).to.equal(0.7 * LAMPORTS);
+    });
   });
 });

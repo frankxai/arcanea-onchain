@@ -145,6 +145,12 @@ pub enum RewardError {
 
     #[msg("Share exceeds 10000 basis points")]
     InvalidShareBps,
+
+    #[msg("Creator reward account belongs to a different reward pool")]
+    PoolMismatch,
+
+    #[msg("Unauthorized: not the creator of this reward account")]
+    UnauthorizedCreator,
 }
 
 // ─────────────────────────────────────────────────
@@ -369,14 +375,17 @@ pub mod rewards {
     ///
     /// The creator calls this to withdraw their claimable balance.
     /// Pull-over-push pattern: only the creator themselves can claim.
+    ///
+    /// # Security
+    /// - `creator_reward` must have been credited by *this* pool
+    ///   (`has_one = reward_pool`). Anyone can create a pool, so without this an
+    ///   attacker could credit themselves in their own pool and then claim that
+    ///   balance out of a different, funded pool.
+    /// - Only the recorded creator can claim (`has_one = creator` + `Signer`).
     pub fn claim_reward(ctx: Context<ClaimReward>) -> Result<()> {
         let creator_reward = &mut ctx.accounts.creator_reward;
         let pool = &mut ctx.accounts.reward_pool;
 
-        require!(
-            creator_reward.creator == ctx.accounts.creator.key(),
-            RewardError::UnauthorizedAdmin // Reuse error for unauthorized
-        );
         require!(creator_reward.claimable > 0, RewardError::NothingToClaim);
 
         let claim_amount = creator_reward.claimable;
@@ -592,10 +601,18 @@ pub struct Distribute<'info> {
 
 #[derive(Accounts)]
 pub struct ClaimReward<'info> {
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"reward_pool", reward_pool.admin.as_ref()],
+        bump = reward_pool.bump
+    )]
     pub reward_pool: Account<'info, RewardPool>,
 
-    #[account(mut)]
+    #[account(
+        mut,
+        has_one = reward_pool @ RewardError::PoolMismatch,
+        has_one = creator @ RewardError::UnauthorizedCreator
+    )]
     pub creator_reward: Account<'info, CreatorReward>,
 
     #[account(mut)]
