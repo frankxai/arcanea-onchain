@@ -252,15 +252,20 @@ contract ArcaneaGovernance is AccessControl, ReentrancyGuard {
         address target,
         uint256 value,
         bytes calldata callData
-    ) external returns (uint256 proposalId) {
+    )
+        external
+        returns (uint256 proposalId)
+    {
         if (!hasRole(GUARDIAN_ROLE, msg.sender) && !hasRole(DELEGATE_ROLE, msg.sender)) {
             revert ZeroAddress(); // Unauthorized (reusing error for gas efficiency)
         }
         if (activeProposal[msg.sender] != 0) {
             // Check if previous proposal is still active
             Proposal storage prev = proposals[activeProposal[msg.sender]];
-            if (prev.status == ProposalStatus.Active || prev.status == ProposalStatus.Passed
-                || prev.status == ProposalStatus.Queued) {
+            if (
+                prev.status == ProposalStatus.Active || prev.status == ProposalStatus.Passed
+                    || prev.status == ProposalStatus.Queued
+            ) {
                 revert ProposerHasActiveProposal(msg.sender);
             }
         }
@@ -304,7 +309,11 @@ contract ArcaneaGovernance is AccessControl, ReentrancyGuard {
         address target,
         uint256 value,
         bytes calldata callData
-    ) external onlyRole(SHINKAMI_ROLE) returns (uint256 proposalId) {
+    )
+        external
+        onlyRole(SHINKAMI_ROLE)
+        returns (uint256 proposalId)
+    {
         proposalId = _nextProposalId++;
         uint64 now_ = uint64(block.timestamp);
 

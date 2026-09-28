@@ -132,10 +132,7 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
     event GuardianApproval(uint256 indexed requestId, address indexed guardian);
 
     event BridgedNFTMinted(
-        address indexed nftContract,
-        uint256 indexed tokenId,
-        bytes32 sourceChainHash,
-        address recipient
+        address indexed nftContract, uint256 indexed tokenId, bytes32 sourceChainHash, address recipient
     );
 
     event CollectionWhitelisted(address indexed collection, bool status);
@@ -225,7 +222,13 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
         uint256 tokenId,
         bytes32 solanaAccount,
         bool isHighValue
-    ) external payable whenNotPaused nonReentrant returns (uint256 requestId) {
+    )
+        external
+        payable
+        whenNotPaused
+        nonReentrant
+        returns (uint256 requestId)
+    {
         if (!whitelistedCollections[nftContract]) revert CollectionNotWhitelisted(nftContract);
         if (solanaAccount == bytes32(0)) revert InvalidSolanaAccount();
         if (msg.value < bridgeFee) revert InsufficientBridgeFee(bridgeFee, msg.value);
@@ -261,7 +264,9 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
             guardianApproved: !isHighValue // Auto-approved if not high-value
         });
 
-        emit BridgeRequestCreated(requestId, BridgeDirection.BaseToSolana, nftContract, tokenId, solanaAccount, msg.sender);
+        emit BridgeRequestCreated(
+            requestId, BridgeDirection.BaseToSolana, nftContract, tokenId, solanaAccount, msg.sender
+        );
     }
 
     /**
@@ -298,10 +303,7 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
      * @notice Mark a bridge request as failed and unlock the NFT back to the requester.
      * @dev Only callable by RELAYER_ROLE or ADMIN_ROLE.
      */
-    function failBridgeRequest(uint256 requestId, string calldata reason)
-        external
-        nonReentrant
-    {
+    function failBridgeRequest(uint256 requestId, string calldata reason) external nonReentrant {
         if (!hasRole(RELAYER_ROLE, msg.sender) && !hasRole(ADMIN_ROLE, msg.sender)) {
             revert BridgeRequestNotFound(requestId); // Generic error for unauthorized
         }
@@ -317,9 +319,7 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
             bytes32 tokenHash = keccak256(abi.encodePacked(request.nftContract, request.tokenId));
             bridgedTokens[tokenHash] = false;
 
-            IERC721(request.nftContract).safeTransferFrom(
-                address(this), request.requester, request.tokenId
-            );
+            IERC721(request.nftContract).safeTransferFrom(address(this), request.requester, request.tokenId);
         }
 
         emit BridgeFailed(requestId, reason);
@@ -342,9 +342,7 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
             bytes32 tokenHash = keccak256(abi.encodePacked(request.nftContract, request.tokenId));
             bridgedTokens[tokenHash] = false;
 
-            IERC721(request.nftContract).safeTransferFrom(
-                address(this), msg.sender, request.tokenId
-            );
+            IERC721(request.nftContract).safeTransferFrom(address(this), msg.sender, request.tokenId);
         }
 
         emit BridgeCancelled(requestId);
@@ -372,7 +370,12 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
         address recipient,
         bytes32 sourceChainHash,
         string calldata metadataURI
-    ) external onlyRole(RELAYER_ROLE) whenNotPaused nonReentrant {
+    )
+        external
+        onlyRole(RELAYER_ROLE)
+        whenNotPaused
+        nonReentrant
+    {
         if (recipient == address(0)) revert ZeroAddress();
         if (bridgedTokens[sourceChainHash]) revert TokenAlreadyBridged(nftContract, 0);
 
