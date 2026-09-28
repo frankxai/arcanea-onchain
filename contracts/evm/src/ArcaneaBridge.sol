@@ -20,7 +20,17 @@ pragma solidity ^0.8.24;
  *     3. Off-chain relayer processes the event and unlocks on Solana
  *
  * Security decisions:
- *   - Guardian approval required for high-value transfers (above threshold)
+ *   - Guardian approval required for high-value transfers. "High value" is
+ *     derived on-chain, never supplied by the caller (see `isHighValueCollection`).
+ *     There is no price oracle, so the value basis is an ADMIN_ROLE-assessed
+ *     per-collection value: a collection is low-value only if an admin has
+ *     explicitly assessed it BELOW `highValueThreshold`. Unassessed collections
+ *     default to high-value and require Guardian approval.
+ *   - Outbound requests are two-phase on the relayer side: the relayer must
+ *     `acknowledgeBridgeRequest()` BEFORE it mints on Solana, and the requester
+ *     can only cancel while the request is still Pending (unacknowledged) and
+ *     `cancelTimeout` has elapsed. This closes the cancel-after-mint race that
+ *     would otherwise leave the NFT on both chains.
  *   - Emergency pause stops all bridge operations
  *   - Configurable bridge fee to prevent spam
  *   - Per-token bridge tracking to prevent double-minting
@@ -59,10 +69,11 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
     }
 
     enum BridgeStatus {
-        Pending, // Request created, awaiting processing
+        Pending, // Request created, awaiting processing (requester may cancel after cancelTimeout)
         Completed, // Successfully bridged
-        Cancelled, // Cancelled by user or admin
-        Failed // Failed during processing
+        Cancelled, // Cancelled by the requester
+        Failed, // Failed during processing (NFT returned)
+        Acknowledged // Relayer committed to minting on the destination chain; no user cancel
     }
 
     // ──────────────────────────────────────────────
@@ -111,6 +122,10 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
     error WithdrawalFailed();
     error NoBalanceToWithdraw();
     error CooldownNotElapsed(uint256 availableAt);
+    error CancelTimeoutNotElapsed(uint256 availableAt);
+    error BridgeRequestNotAcknowledged(uint256 requestId);
+    error InvalidBridgeDirection(uint256 requestId);
+    error NotRelayerOrAdmin(address account);
 
     // ──────────────────────────────────────────────
     //  Events
@@ -130,6 +145,10 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
     event BridgeFailed(uint256 indexed requestId, string reason);
 
     event GuardianApproval(uint256 indexed requestId, address indexed guardian);
+    event BridgeAcknowledged(uint256 indexed requestId, address indexed relayer);
+    event CollectionValueAssessed(address indexed collection, uint256 value);
+    event CollectionValueCleared(address indexed collection);
+    event CancelTimeoutUpdated(uint256 oldTimeout, uint256 newTimeout);
 
     event BridgedNFTMinted(
         address indexed nftContract, uint256 indexed tokenId, bytes32 sourceChainHash, address recipient
@@ -152,9 +171,21 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
     /// @notice Bridge fee in wei (to prevent spam bridging). Default: 0.001 ETH.
     uint256 public bridgeFee = 0.001 ether;
 
-    /// @notice Value threshold above which Guardian approval is required.
-    /// @dev "Value" is estimated off-chain; the Guardian role holder validates.
+    /// @notice Assessed value (wei) at or above which Guardian approval is required.
+    /// @dev Compared against `collectionAssessedValue`. Unassessed collections are
+    ///      always treated as high-value (fail-closed).
     uint256 public highValueThreshold = 1 ether;
+
+    /// @notice Minimum time a Pending outbound request must wait before its requester
+    ///         may cancel it. Gives the relayer time to acknowledge before minting.
+    uint256 public cancelTimeout = 1 days;
+
+    /// @notice ADMIN_ROLE-assessed value (wei) per collection. The value basis for
+    ///         the high-value check, since no on-chain price oracle is used.
+    mapping(address => uint256) public collectionAssessedValue;
+
+    /// @notice Whether an admin has assessed the collection's value at all.
+    mapping(address => bool) public collectionValueAssessed;
 
     /// @notice Minimum time between bridge requests per user (anti-spam).
     uint256 public cooldownPeriod = 5 minutes;
@@ -209,19 +240,19 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
      * @dev The NFT is transferred to this contract (locked). An off-chain relayer
      *      monitors the BridgeRequestCreated event and unlocks/mints on Solana.
      *
-     *      If the NFT's estimated value exceeds highValueThreshold, a Guardian
-     *      must call `approveHighValueBridge()` before the relayer processes it.
+     *      Whether the request is high-value is derived on-chain from the
+     *      collection's admin-assessed value (see `isHighValueCollection`). If it
+     *      is, a Guardian must call `approveHighValueBridge()` before the relayer
+     *      can acknowledge it.
      *
      * @param nftContract    The ERC-721 collection address.
      * @param tokenId        Token ID to bridge.
      * @param solanaAccount  Destination Solana wallet (32 bytes).
-     * @param isHighValue    Set to true if this is a high-value transfer (requires Guardian approval).
      */
     function bridgeToSolana(
         address nftContract,
         uint256 tokenId,
-        bytes32 solanaAccount,
-        bool isHighValue
+        bytes32 solanaAccount
     )
         external
         payable
@@ -250,7 +281,8 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
         lastBridgeTime[msg.sender] = block.timestamp;
         accumulatedFees += msg.value;
 
-        // Create bridge request
+        // Create bridge request. High-value is derived on-chain, never caller-supplied.
+        bool highValue = isHighValueCollection(nftContract);
         requestId = _nextRequestId++;
         bridgeRequests[requestId] = BridgeRequest({
             requestId: requestId,
@@ -260,8 +292,8 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
             solanaAccount: solanaAccount,
             requester: msg.sender,
             timestamp: block.timestamp,
-            status: isHighValue ? BridgeStatus.Pending : BridgeStatus.Pending,
-            guardianApproved: !isHighValue // Auto-approved if not high-value
+            status: BridgeStatus.Pending,
+            guardianApproved: !highValue // Auto-approved only if assessed below threshold
         });
 
         emit BridgeRequestCreated(
@@ -285,14 +317,32 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
     }
 
     /**
+     * @notice Relayer commits to processing an outbound request. MUST be called
+     *         (and confirmed) BEFORE the relayer mints/unlocks on Solana.
+     * @dev Once acknowledged, the requester can no longer cancel, so the NFT cannot
+     *      be reclaimed on Base after it has been minted on Solana.
+     */
+    function acknowledgeBridgeRequest(uint256 requestId) external onlyRole(RELAYER_ROLE) whenNotPaused {
+        BridgeRequest storage request = bridgeRequests[requestId];
+        if (request.requestId == 0) revert BridgeRequestNotFound(requestId);
+        if (request.direction != BridgeDirection.BaseToSolana) revert InvalidBridgeDirection(requestId);
+        if (request.status != BridgeStatus.Pending) revert BridgeRequestNotPending(requestId);
+        if (!request.guardianApproved) revert HighValueTransferRequiresGuardianApproval(requestId);
+
+        request.status = BridgeStatus.Acknowledged;
+
+        emit BridgeAcknowledged(requestId, msg.sender);
+    }
+
+    /**
      * @notice Relayer marks an outbound bridge request as completed.
      * @dev Called after the Solana side has successfully minted/unlocked the NFT.
+     *      The request must have been acknowledged first.
      */
     function completeBridgeRequest(uint256 requestId) external onlyRole(RELAYER_ROLE) {
         BridgeRequest storage request = bridgeRequests[requestId];
         if (request.requestId == 0) revert BridgeRequestNotFound(requestId);
-        if (request.status != BridgeStatus.Pending) revert BridgeRequestNotPending(requestId);
-        if (!request.guardianApproved) revert HighValueTransferRequiresGuardianApproval(requestId);
+        if (request.status != BridgeStatus.Acknowledged) revert BridgeRequestNotAcknowledged(requestId);
 
         request.status = BridgeStatus.Completed;
 
@@ -301,16 +351,22 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
 
     /**
      * @notice Mark a bridge request as failed and unlock the NFT back to the requester.
-     * @dev Only callable by RELAYER_ROLE or ADMIN_ROLE.
+     * @dev A Pending (unacknowledged) request can be failed by RELAYER_ROLE or ADMIN_ROLE.
+     *      An Acknowledged request can only be failed by RELAYER_ROLE: only the relayer
+     *      knows whether the Solana mint happened, and failing a minted request would
+     *      put the NFT on both chains.
      */
     function failBridgeRequest(uint256 requestId, string calldata reason) external nonReentrant {
-        if (!hasRole(RELAYER_ROLE, msg.sender) && !hasRole(ADMIN_ROLE, msg.sender)) {
-            revert BridgeRequestNotFound(requestId); // Generic error for unauthorized
-        }
+        bool isRelayer = hasRole(RELAYER_ROLE, msg.sender);
+        if (!isRelayer && !hasRole(ADMIN_ROLE, msg.sender)) revert NotRelayerOrAdmin(msg.sender);
 
         BridgeRequest storage request = bridgeRequests[requestId];
         if (request.requestId == 0) revert BridgeRequestNotFound(requestId);
-        if (request.status != BridgeStatus.Pending) revert BridgeRequestNotPending(requestId);
+        if (request.status == BridgeStatus.Acknowledged) {
+            if (!isRelayer) revert NotRelayerOrAdmin(msg.sender);
+        } else if (request.status != BridgeStatus.Pending) {
+            revert BridgeRequestNotPending(requestId);
+        }
 
         request.status = BridgeStatus.Failed;
 
@@ -327,13 +383,17 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
 
     /**
      * @notice Cancel a pending outbound bridge request and reclaim the NFT.
-     * @dev Only the original requester can cancel. Only works for pending requests.
+     * @dev Only the original requester can cancel, only while the request is still
+     *      Pending (the relayer has not acknowledged it), and only after
+     *      `cancelTimeout` has elapsed since the request was created.
      */
     function cancelBridgeRequest(uint256 requestId) external nonReentrant {
         BridgeRequest storage request = bridgeRequests[requestId];
         if (request.requestId == 0) revert BridgeRequestNotFound(requestId);
         if (request.requester != msg.sender) revert NotRequester(requestId);
         if (request.status != BridgeStatus.Pending) revert BridgeRequestNotPending(requestId);
+        uint256 cancellableAt = request.timestamp + cancelTimeout;
+        if (block.timestamp < cancellableAt) revert CancelTimeoutNotElapsed(cancellableAt);
 
         request.status = BridgeStatus.Cancelled;
 
@@ -439,6 +499,30 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
         emit HighValueThresholdUpdated(old, newThreshold);
     }
 
+    /**
+     * @notice Record the assessed value (wei) of a collection. Collections assessed
+     *         below `highValueThreshold` skip Guardian approval; all others need it.
+     */
+    function setCollectionAssessedValue(address collection, uint256 value) external onlyRole(ADMIN_ROLE) {
+        collectionAssessedValue[collection] = value;
+        collectionValueAssessed[collection] = true;
+        emit CollectionValueAssessed(collection, value);
+    }
+
+    /// @notice Remove a collection's assessment, returning it to the high-value default.
+    function clearCollectionAssessedValue(address collection) external onlyRole(ADMIN_ROLE) {
+        delete collectionAssessedValue[collection];
+        delete collectionValueAssessed[collection];
+        emit CollectionValueCleared(collection);
+    }
+
+    /// @notice Update how long a Pending request must wait before its requester can cancel.
+    function setCancelTimeout(uint256 newTimeout) external onlyRole(ADMIN_ROLE) {
+        uint256 old = cancelTimeout;
+        cancelTimeout = newTimeout;
+        emit CancelTimeoutUpdated(old, newTimeout);
+    }
+
     /// @notice Update the cooldown period between bridge requests.
     function setCooldownPeriod(uint256 newCooldown) external onlyRole(ADMIN_ROLE) {
         uint256 old = cooldownPeriod;
@@ -499,6 +583,14 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
     // ──────────────────────────────────────────────
     //  View Functions
     // ──────────────────────────────────────────────
+
+    /**
+     * @notice Whether bridging from `collection` requires Guardian approval.
+     * @dev Fail-closed: true unless an admin assessed the collection below the threshold.
+     */
+    function isHighValueCollection(address collection) public view returns (bool) {
+        return !collectionValueAssessed[collection] || collectionAssessedValue[collection] >= highValueThreshold;
+    }
 
     /// @notice Check if a token is currently locked in the bridge.
     function isTokenBridged(address collection, uint256 tokenId) external view returns (bool) {
