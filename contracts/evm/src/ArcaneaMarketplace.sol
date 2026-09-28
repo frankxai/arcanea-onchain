@@ -18,7 +18,11 @@ pragma solidity ^0.8.24;
  *
  * Security decisions:
  *   - ReentrancyGuard on ALL functions that move ETH or tokens
- *   - Pull-over-push for failed refunds (pendingWithdrawals mapping)
+ *   - Pull-based refunds: outbid / reserve-not-met bids are credited to
+ *     pendingWithdrawals (no external call); payouts are pushed with a bounded
+ *     gas stipend and credited to pendingWithdrawals if the push fails
+ *   - emergencyWithdraw can only take surplus, never totalEscrowed user funds
+ *   - Auction settlement uses transferFrom so a winner cannot block it
  *   - Anti-sniping: 15-minute extension on bids placed in last 15 minutes
  *   - Minimum bid increment: 5% above current highest bid
  *   - Reserve price: auctions only settle if reserve is met
@@ -253,8 +257,19 @@ contract ArcaneaMarketplace is AccessControl, Pausable, ReentrancyGuard {
     ///      are refunded immediately when outbid. This mapping is for safety tracking.
     mapping(uint256 => mapping(address => uint256)) public escrowedBids;
 
-    /// @notice Pull-over-push: accumulated balances for failed refunds.
+    /// @notice Pull-over-push: refunds owed to outbid bidders and payouts that could
+    ///         not be pushed. Claimed via `withdrawPending()`.
     mapping(address => uint256) public pendingWithdrawals;
+
+    /// @notice ETH held on behalf of users: active English-auction highest bids,
+    ///         active offers, and unclaimed `pendingWithdrawals`. `emergencyWithdraw`
+    ///         can never touch this amount.
+    uint256 public totalEscrowed;
+
+    /// @notice Gas forwarded to payout recipients (seller, royalty receiver, fee
+    ///         recipient). Enough for smart-contract wallets, too little to grief
+    ///         settlement; a recipient that needs more is credited to pendingWithdrawals.
+    uint256 public constant PAYOUT_GAS_STIPEND = 50_000;
 
     // ──────────────────────────────────────────────
     //  Constructor
@@ -434,7 +449,7 @@ contract ArcaneaMarketplace is AccessControl, Pausable, ReentrancyGuard {
      *   - Bid >= reservePrice (if first bid)
      *   - Bid >= highestBid + 5% increment (if not first bid)
      *   - Anti-sniping: extends endTime by 15 min if bid within last 15 min
-     *   - Immediately refunds previous highest bidder
+     *   - Credits the previous highest bidder a pull refund (withdrawPending)
      */
     function placeBid(uint256 auctionId) external payable whenNotPaused nonReentrant {
         EnglishAuction storage auction = englishAuctions[auctionId];
@@ -456,18 +471,20 @@ contract ArcaneaMarketplace is AccessControl, Pausable, ReentrancyGuard {
             if (msg.value < minBid) revert BidTooLow(minBid, msg.value);
         }
 
-        // Refund previous highest bidder
+        // Credit the previous highest bidder's refund (pull-based). No external call
+        // here, so a bidder contract cannot block or gas-grief later bids.
         if (auction.highestBidder != address(0)) {
             uint256 previousBid = auction.highestBid;
             address previousBidder = auction.highestBidder;
             escrowedBids[auctionId][previousBidder] = 0;
-            _safeTransferETH(previousBidder, previousBid);
+            pendingWithdrawals[previousBidder] += previousBid; // stays in totalEscrowed
         }
 
         // Record new highest bid
         auction.highestBid = msg.value;
         auction.highestBidder = msg.sender;
         escrowedBids[auctionId][msg.sender] = msg.value;
+        totalEscrowed += msg.value;
 
         emit BidPlaced(auctionId, msg.sender, msg.value);
 
@@ -497,12 +514,15 @@ contract ArcaneaMarketplace is AccessControl, Pausable, ReentrancyGuard {
         if (hasBids && (reserveMet || auction.reservePrice == 0)) {
             // Auction succeeded — transfer NFT to winner, pay seller
             escrowedBids[auctionId][auction.highestBidder] = 0;
+            totalEscrowed -= auction.highestBid;
 
             (uint256 platformFee, uint256 royaltyAmount, address royaltyReceiver) =
                 _calculateFees(auction.nftContract, auction.tokenId, auction.highestBid);
 
-            // Transfer NFT to winner
-            IERC721(auction.nftContract).safeTransferFrom(address(this), auction.highestBidder, auction.tokenId);
+            // Transfer NFT to winner with transferFrom: no onERC721Received callback,
+            // so a winner contract that reverts (or lacks the hook) cannot block
+            // settlement and strand the seller's proceeds.
+            IERC721(auction.nftContract).transferFrom(address(this), auction.highestBidder, auction.tokenId);
 
             // Distribute payments
             uint256 sellerProceeds = auction.highestBid - platformFee - royaltyAmount;
@@ -516,14 +536,15 @@ contract ArcaneaMarketplace is AccessControl, Pausable, ReentrancyGuard {
 
             emit EnglishAuctionSettled(auctionId, auction.highestBidder, auction.highestBid, royaltyAmount, platformFee);
         } else {
-            // Auction failed (no bids or reserve not met) — return NFT to seller
-            IERC721(auction.nftContract).safeTransferFrom(address(this), auction.seller, auction.tokenId);
+            // Auction failed (no bids or reserve not met) — return NFT to seller.
+            // transferFrom (no callback): the seller escrowed it via transferFrom too.
+            IERC721(auction.nftContract).transferFrom(address(this), auction.seller, auction.tokenId);
 
-            // Refund highest bidder if reserve not met
+            // Credit the highest bidder's refund if reserve not met (pull-based)
             if (hasBids) {
                 uint256 refundAmount = auction.highestBid;
                 escrowedBids[auctionId][auction.highestBidder] = 0;
-                _safeTransferETH(auction.highestBidder, refundAmount);
+                pendingWithdrawals[auction.highestBidder] += refundAmount; // stays in totalEscrowed
             }
 
             emit EnglishAuctionCancelled(auctionId);
@@ -693,6 +714,7 @@ contract ArcaneaMarketplace is AccessControl, Pausable, ReentrancyGuard {
         if (expiresAt <= block.timestamp) revert InvalidTimeRange();
 
         offerId = _nextOfferId++;
+        totalEscrowed += msg.value;
 
         offers[offerId] = Offer({
             offerId: offerId,
@@ -721,6 +743,7 @@ contract ArcaneaMarketplace is AccessControl, Pausable, ReentrancyGuard {
         if (tokenOwner != msg.sender) revert NotTokenOwner();
 
         offer.status = OfferStatus.Accepted;
+        totalEscrowed -= offer.amount;
 
         // Calculate fees
         (uint256 platformFee, uint256 royaltyAmount, address royaltyReceiver) =
@@ -752,6 +775,7 @@ contract ArcaneaMarketplace is AccessControl, Pausable, ReentrancyGuard {
         if (offer.status != OfferStatus.Active) revert OfferNotActive();
 
         offer.status = OfferStatus.Cancelled;
+        totalEscrowed -= offer.amount;
 
         // Refund escrowed ETH
         _safeTransferETH(msg.sender, offer.amount);
@@ -800,25 +824,28 @@ contract ArcaneaMarketplace is AccessControl, Pausable, ReentrancyGuard {
         if (amount == 0) revert NoBalanceToWithdraw();
 
         pendingWithdrawals[msg.sender] = 0;
+        totalEscrowed -= amount;
 
         (bool success,) = msg.sender.call{ value: amount }("");
         if (!success) revert WithdrawalFailed();
     }
 
     /**
-     * @notice Emergency withdrawal of all contract ETH to admin.
-     * @dev Only for extreme emergencies (e.g., discovered vulnerability).
-     *      Logs amount for transparency.
+     * @notice Emergency withdrawal of ETH that does NOT belong to users.
+     * @dev Only for extreme emergencies. Escrowed bids, active offers and
+     *      pendingWithdrawals (`totalEscrowed`) are excluded, so users can always
+     *      reclaim their funds. Only surplus (e.g. force-sent ETH) is withdrawable.
      */
     function emergencyWithdraw(address payable to) external onlyRole(ADMIN_ROLE) nonReentrant {
         if (to == address(0)) revert ZeroAddress();
         uint256 balance = address(this).balance;
-        if (balance == 0) revert NoBalanceToWithdraw();
+        uint256 surplus = balance > totalEscrowed ? balance - totalEscrowed : 0;
+        if (surplus == 0) revert NoBalanceToWithdraw();
 
-        (bool success,) = to.call{ value: balance }("");
+        (bool success,) = to.call{ value: surplus }("");
         if (!success) revert WithdrawalFailed();
 
-        emit EmergencyWithdrawal(to, balance);
+        emit EmergencyWithdrawal(to, surplus);
     }
 
     // ══════════════════════════════════════════════
@@ -868,15 +895,21 @@ contract ArcaneaMarketplace is AccessControl, Pausable, ReentrancyGuard {
     }
 
     /**
-     * @dev Transfer ETH safely. If transfer fails, add to pendingWithdrawals (pull pattern).
-     *      Uses call{} instead of transfer/send for SC wallet compatibility.
+     * @dev Push ETH with a bounded gas stipend and without copying return data, so a
+     *      recipient can neither revert nor gas-grief (burn 63/64 of gas, return-bomb)
+     *      the caller. If the push fails, credit pendingWithdrawals (pull pattern).
      */
     function _safeTransferETH(address to, uint256 amount) internal {
         if (amount == 0) return;
-        (bool success,) = to.call{ value: amount }("");
+        bool success;
+        uint256 stipend = PAYOUT_GAS_STIPEND;
+        assembly ("memory-safe") {
+            success := call(stipend, to, amount, 0, 0, 0, 0)
+        }
         if (!success) {
             // Pull-over-push: store for later withdrawal instead of reverting
             pendingWithdrawals[to] += amount;
+            totalEscrowed += amount;
         }
     }
 

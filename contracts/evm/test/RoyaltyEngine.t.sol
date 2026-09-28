@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
+import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
 import { RoyaltyEngine } from "../src/RoyaltyEngine.sol";
 
 contract RoyaltyEngineTest is Test {
@@ -40,8 +41,11 @@ contract RoyaltyEngineTest is Test {
 
     function test_RegisterRequiresRegistrarRole() public {
         (address payable[] memory r, uint256[] memory s) = _pair(5000, 5000);
+        bytes32 registrarRole = engine.REGISTRAR_ROLE();
         vm.prank(creator);
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, creator, registrarRole)
+        );
         engine.registerCollection(collection, 1000, r, s);
     }
 

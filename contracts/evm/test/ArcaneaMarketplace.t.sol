@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
+import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
 import { ArcaneaNFT } from "../src/ArcaneaNFT.sol";
 import { ArcaneaMarketplace } from "../src/ArcaneaMarketplace.sol";
 
@@ -112,6 +113,10 @@ contract ArcaneaMarketplaceTest is Test {
 
         vm.prank(bidder2);
         market.placeBid{ value: 2 ether }(auctionId);
+        assertEq(market.pendingWithdrawals(buyer), 1 ether, "outbid bid credited as a pull refund");
+
+        vm.prank(buyer);
+        market.withdrawPending();
         assertEq(buyer.balance, 10 ether, "outbid bidder refunded");
 
         vm.warp(block.timestamp + 1 days + 1);
@@ -152,12 +157,127 @@ contract ArcaneaMarketplaceTest is Test {
     }
 
     function test_PlatformFeeChangeRequiresAdmin() public {
+        bytes32 adminRole = market.ADMIN_ROLE();
         vm.prank(buyer);
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, buyer, adminRole)
+        );
         market.setPlatformFee(100);
 
         vm.prank(admin);
         market.setPlatformFee(100);
         assertEq(market.platformFeeBps(), 100);
+    }
+
+    // ── M4: settlement must not depend on the winner's receiver callback ──
+
+    function test_M4_WinnerWithRevertingReceiverCannotBlockSettlement() public {
+        uint256 auctionId = _auction(1 ether, uint64(block.timestamp + 1 days));
+
+        RevertingReceiverBidder winner = new RevertingReceiverBidder(market);
+        vm.deal(address(winner), 2 ether);
+        winner.bid(auctionId, 2 ether);
+
+        vm.warp(block.timestamp + 1 days + 1);
+        market.settleEnglishAuction(auctionId);
+
+        assertEq(nft.ownerOf(tokenId), address(winner), "winner receives the NFT");
+        assertEq(seller.balance, 1.85 ether, "seller is paid");
+    }
+
+    // ── M5: refunds are pull-based; emergencyWithdraw cannot take escrow ──
+
+    /// Pre-fix, placeBid pushed the refund to the previous bidder with all gas.
+    /// A bidder contract that burns gas in receive() made every later bid run
+    /// out of gas, freezing the auction on its own (low) bid.
+    function test_M5_GasGriefingBidderCannotBlockOutbid() public {
+        uint256 auctionId = _auction(1 ether, uint64(block.timestamp + 1 days));
+
+        GasGriefingBidder griefer = new GasGriefingBidder(market);
+        vm.deal(address(griefer), 1 ether);
+        griefer.bid(auctionId, 1 ether);
+
+        vm.prank(bidder2);
+        market.placeBid{ value: 2 ether, gas: 300_000 }(auctionId);
+
+        (,,,,, uint256 highestBid, address highestBidder,,,) = market.englishAuctions(auctionId);
+        assertEq(highestBidder, bidder2);
+        assertEq(highestBid, 2 ether);
+        assertEq(market.pendingWithdrawals(address(griefer)), 1 ether, "refund is claimable, not pushed");
+    }
+
+    function test_M5_EmergencyWithdrawCannotTakeEscrowedBidsOffersOrPending() public {
+        uint256 auctionId = _auction(1 ether, uint64(block.timestamp + 1 days));
+        vm.prank(buyer);
+        market.placeBid{ value: 1 ether }(auctionId);
+        vm.prank(bidder2);
+        market.placeBid{ value: 2 ether }(auctionId); // buyer now has a 1 ether pull refund
+
+        vm.prank(buyer);
+        market.createOffer{ value: 0.5 ether }(address(nft), 999, uint64(block.timestamp + 1 days));
+
+        // 1 ether of stray (force-sent) ETH that belongs to nobody.
+        vm.deal(address(market), address(market).balance + 1 ether);
+
+        address payable treasury = payable(makeAddr("treasury"));
+        vm.prank(admin);
+        market.emergencyWithdraw(treasury);
+
+        assertEq(treasury.balance, 1 ether, "only surplus is withdrawable");
+        assertEq(address(market).balance, 3.5 ether, "bids, offers and pending refunds remain");
+
+        // Users can still get every wei back.
+        vm.prank(buyer);
+        market.withdrawPending();
+        vm.prank(buyer);
+        market.cancelOffer(1);
+        vm.warp(block.timestamp + 1 days + 1);
+        market.settleEnglishAuction(auctionId);
+        assertEq(address(market).balance, 0, "every escrowed wei was paid out");
+    }
+
+    function test_M5_EmergencyWithdrawRevertsWhenOnlyEscrowIsHeld() public {
+        vm.prank(buyer);
+        market.createOffer{ value: 1 ether }(address(nft), tokenId, uint64(block.timestamp + 1 days));
+
+        vm.prank(admin);
+        vm.expectRevert(ArcaneaMarketplace.NoBalanceToWithdraw.selector);
+        market.emergencyWithdraw(payable(admin));
+    }
+}
+
+/// @dev Bids from a contract whose ERC-721 receiver hook always reverts.
+contract RevertingReceiverBidder {
+    ArcaneaMarketplace internal immutable market;
+
+    constructor(ArcaneaMarketplace market_) {
+        market = market_;
+    }
+
+    function bid(uint256 auctionId, uint256 amount) external {
+        market.placeBid{ value: amount }(auctionId);
+    }
+
+    function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
+        revert("no NFTs, thanks");
+    }
+
+    receive() external payable { }
+}
+
+/// @dev Bids, then burns all forwarded gas whenever it is sent ETH.
+contract GasGriefingBidder {
+    ArcaneaMarketplace internal immutable market;
+
+    constructor(ArcaneaMarketplace market_) {
+        market = market_;
+    }
+
+    function bid(uint256 auctionId, uint256 amount) external {
+        market.placeBid{ value: amount }(auctionId);
+    }
+
+    receive() external payable {
+        while (true) { }
     }
 }
