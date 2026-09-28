@@ -292,8 +292,9 @@ contract ArcaneaNFT is ERC721Enumerable, ERC2981, AccessControl, Pausable, Reent
 
         uint256 tokenId = _nextTokenId++;
 
-        _safeMint(to, tokenId);
-
+        // Checks-effects-interactions: attributes (incl. soulbound) must be stored
+        // BEFORE _safeMint, whose onERC721Received callback could otherwise move a
+        // soulbound token while it still reads as transferable.
         _attributes[tokenId] = ArcaneanAttributes({
             element: element,
             guardian: guardian,
@@ -307,6 +308,8 @@ contract ArcaneaNFT is ERC721Enumerable, ERC2981, AccessControl, Pausable, Reent
             evolutionCount: 0,
             customData: bytes20(0)
         });
+
+        _safeMint(to, tokenId);
 
         emit TokenMinted(tokenId, to, element, guardian, tier, soulbound);
 
@@ -353,8 +356,8 @@ contract ArcaneaNFT is ERC721Enumerable, ERC2981, AccessControl, Pausable, Reent
 
         for (uint256 i = 0; i < count;) {
             uint256 tokenId = _nextTokenId++;
-            _safeMint(to, tokenId);
 
+            // Effects before the _safeMint receiver callback (see mint()).
             _attributes[tokenId] = ArcaneanAttributes({
                 element: element,
                 guardian: guardian,
@@ -368,6 +371,8 @@ contract ArcaneaNFT is ERC721Enumerable, ERC2981, AccessControl, Pausable, Reent
                 evolutionCount: 0,
                 customData: bytes20(0)
             });
+
+            _safeMint(to, tokenId);
 
             unchecked {
                 ++i;

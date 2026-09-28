@@ -3,6 +3,8 @@ pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
 import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
+import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
+import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import { ArcaneaNFT } from "../src/ArcaneaNFT.sol";
 
 contract ArcaneaNFTTest is Test {
@@ -168,7 +170,7 @@ contract ArcaneaNFTTest is Test {
         nft.pause();
 
         vm.prank(admin);
-        vm.expectRevert();
+        vm.expectRevert(Pausable.EnforcedPause.selector);
         nft.mint{ value: MINT_PRICE }(
             alice,
             ArcaneaNFT.Element.Fire,
@@ -177,5 +179,61 @@ contract ArcaneaNFTTest is Test {
             ArcaneaNFT.Tier.Rare,
             false
         );
+    }
+
+    // ── H3: attributes (soulbound) must be written before the _safeMint callback ──
+
+    function test_H3_ReentrantReceiverCannotMoveSoulboundTokenDuringMint() public {
+        SoulboundEscapeReceiver receiver = new SoulboundEscapeReceiver(nft, bob);
+
+        uint256 id = _mint(address(receiver), true);
+
+        assertTrue(receiver.sawSoulboundDuringCallback(), "attributes visible inside the callback");
+        assertFalse(receiver.escaped(), "soulbound token escaped during mint");
+        assertEq(nft.ownerOf(id), address(receiver));
+        assertTrue(nft.isSoulbound(id));
+    }
+
+    function test_H3_ReentrantReceiverCannotMoveSoulboundTokenDuringBatchMint() public {
+        SoulboundEscapeReceiver receiver = new SoulboundEscapeReceiver(nft, bob);
+
+        vm.prank(admin);
+        uint256 startId = nft.batchMint{ value: 2 * MINT_PRICE }(
+            address(receiver),
+            2,
+            ArcaneaNFT.Element.Fire,
+            ArcaneaNFT.Guardian.Draconia,
+            ArcaneaNFT.House.Pyros,
+            ArcaneaNFT.Tier.Rare,
+            true
+        );
+
+        assertTrue(receiver.sawSoulboundDuringCallback());
+        assertFalse(receiver.escaped(), "soulbound token escaped during batchMint");
+        assertEq(nft.ownerOf(startId), address(receiver));
+        assertEq(nft.ownerOf(startId + 1), address(receiver));
+    }
+}
+
+/// @dev On receipt, tries to move the freshly minted token to `accomplice`.
+///      Pre-fix, `_attributes` was written after `_safeMint`, so inside this
+///      callback the token still read as non-soulbound and the transfer succeeded.
+contract SoulboundEscapeReceiver is IERC721Receiver {
+    ArcaneaNFT internal immutable nft;
+    address internal immutable accomplice;
+    bool public escaped;
+    bool public sawSoulboundDuringCallback;
+
+    constructor(ArcaneaNFT nft_, address accomplice_) {
+        nft = nft_;
+        accomplice = accomplice_;
+    }
+
+    function onERC721Received(address, address, uint256 tokenId, bytes calldata) external returns (bytes4) {
+        sawSoulboundDuringCallback = nft.isSoulbound(tokenId);
+        try nft.transferFrom(address(this), accomplice, tokenId) {
+            escaped = true;
+        } catch { }
+        return IERC721Receiver.onERC721Received.selector;
     }
 }
