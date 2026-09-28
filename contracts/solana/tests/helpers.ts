@@ -13,7 +13,8 @@ export async function airdrop(to: anchor.web3.PublicKey, sol: number): Promise<v
 }
 
 export async function balance(of: anchor.web3.PublicKey): Promise<number> {
-  return provider.connection.getBalance(of, "confirmed");
+  // Same commitment the provider confirms .rpc() at, so reads see the tx just sent.
+  return provider.connection.getBalance(of, provider.opts.commitment ?? "processed");
 }
 
 /** Assert that `p` rejects with the given Anchor error code name. */
