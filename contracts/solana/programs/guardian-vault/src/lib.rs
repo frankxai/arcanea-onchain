@@ -18,6 +18,12 @@
 //! 2. **Signers** — For amounts above `per_tx_limit`, M-of-N signers must approve
 //! 3. **Admin** — Can update config, change limits, emergency withdraw
 //!
+//! Multisig approvals are only valid for the config they were collected under:
+//! every `update_config` bumps `config_epoch`, each withdrawal request records
+//! the epoch it was created in, and approve/execute reject a mismatch. Otherwise
+//! approvals from a removed signer (the bitmap is index-based) would carry over
+//! to whoever takes that index. Approve/execute also require an active vault.
+//!
 //! All SOL movements are tracked via Anchor events for off-chain indexing.
 
 use anchor_lang::prelude::*;
@@ -77,6 +83,10 @@ pub struct VaultConfig {
     #[max_len(MAX_SIGNERS)]
     pub signers: Vec<Pubkey>,
 
+    /// Incremented on every `update_config`. Withdrawal requests (and their
+    /// approvals) are only valid for the epoch they were created in.
+    pub config_epoch: u64,
+
     /// PDA bump.
     pub bump: u8,
 }
@@ -115,6 +125,9 @@ pub struct WithdrawalRequest {
 
     /// Unix timestamp of creation.
     pub created_at: i64,
+
+    /// `VaultConfig::config_epoch` at creation. Approve/execute require a match.
+    pub config_epoch: u64,
 
     /// PDA bump.
     pub bump: u8,
@@ -176,6 +189,26 @@ pub enum VaultError {
 
     #[msg("Withdrawal request belongs to a different vault")]
     VaultMismatch,
+
+    #[msg("Vault config changed since this withdrawal request was created")]
+    ConfigEpochMismatch,
+
+    #[msg("Duplicate signer")]
+    DuplicateSigner,
+}
+
+/// Signers must be unique and fit the approval bitmap; the threshold must be
+/// reachable (1 <= threshold <= signers.len()).
+fn validate_signers_and_threshold(signers: &[Pubkey], threshold: u8) -> Result<()> {
+    require!(signers.len() <= MAX_SIGNERS, VaultError::TooManySigners);
+    for (i, signer) in signers.iter().enumerate() {
+        require!(!signers[..i].contains(signer), VaultError::DuplicateSigner);
+    }
+    require!(
+        threshold >= 1 && threshold as usize <= signers.len(),
+        VaultError::InvalidThreshold
+    );
+    Ok(())
 }
 
 // ─────────────────────────────────────────────────
@@ -263,11 +296,7 @@ pub mod guardian_vault {
         signers: Vec<Pubkey>,
     ) -> Result<()> {
         require!(guardian_id <= 9, VaultError::InvalidGuardianId);
-        require!(signers.len() <= MAX_SIGNERS, VaultError::TooManySigners);
-        require!(
-            multisig_threshold > 0 && multisig_threshold as usize <= signers.len(),
-            VaultError::InvalidThreshold
-        );
+        validate_signers_and_threshold(&signers, multisig_threshold)?;
 
         let vault = &mut ctx.accounts.vault_config;
         vault.admin = ctx.accounts.admin.key();
@@ -283,6 +312,7 @@ pub mod guardian_vault {
         vault.multisig_threshold = multisig_threshold;
         vault.signer_count = signers.len() as u8;
         vault.signers = signers;
+        vault.config_epoch = 0;
         vault.bump = ctx.bumps.vault_config;
 
         msg!("Guardian Vault #{} initialized", guardian_id);
@@ -437,6 +467,7 @@ pub mod guardian_vault {
         request.is_executed = false;
         request.is_cancelled = false;
         request.created_at = Clock::get()?.unix_timestamp;
+        request.config_epoch = vault.config_epoch;
         request.bump = ctx.bumps.withdrawal_request;
 
         emit!(MultisigWithdrawalCreated {
@@ -455,6 +486,8 @@ pub mod guardian_vault {
     /// Approve a multi-sig withdrawal request.
     ///
     /// # Security
+    /// - Vault must be active
+    /// - Request must belong to the current config epoch
     /// - Caller must be a registered signer
     /// - Cannot approve twice
     /// - Request must not be executed or cancelled
@@ -462,6 +495,11 @@ pub mod guardian_vault {
         let vault = &ctx.accounts.vault_config;
         let request = &mut ctx.accounts.withdrawal_request;
 
+        require!(vault.is_active, VaultError::VaultNotActive);
+        require!(
+            request.config_epoch == vault.config_epoch,
+            VaultError::ConfigEpochMismatch
+        );
         require!(!request.is_executed, VaultError::AlreadyExecuted);
         require!(!request.is_cancelled, VaultError::AlreadyCancelled);
 
@@ -505,13 +543,26 @@ pub mod guardian_vault {
     /// Execute a fully-approved multi-sig withdrawal.
     ///
     /// # Security
-    /// - Threshold must be met
+    /// - Vault must be active
+    /// - Request must belong to the current config epoch
+    /// - Threshold must be met (and still be a valid, reachable threshold)
     /// - Vault must have sufficient balance
     /// - Request must not already be executed
     pub fn execute_withdrawal(ctx: Context<ExecuteWithdrawal>) -> Result<()> {
         let vault = &mut ctx.accounts.vault_config;
         let request = &mut ctx.accounts.withdrawal_request;
 
+        require!(vault.is_active, VaultError::VaultNotActive);
+        require!(
+            request.config_epoch == vault.config_epoch,
+            VaultError::ConfigEpochMismatch
+        );
+        // Defence in depth: a zero threshold would let an unapproved request through.
+        require!(
+            vault.multisig_threshold >= 1
+                && vault.multisig_threshold as usize <= vault.signers.len(),
+            VaultError::InvalidThreshold
+        );
         require!(!request.is_executed, VaultError::AlreadyExecuted);
         require!(!request.is_cancelled, VaultError::AlreadyCancelled);
         require!(
@@ -610,6 +661,10 @@ pub mod guardian_vault {
     ///
     /// # Security
     /// - Only admin can update config
+    /// - Signers must be unique; the resulting threshold is always re-validated
+    ///   against the resulting signer set (1 <= threshold <= signers.len())
+    /// - Bumps `config_epoch`, invalidating all outstanding withdrawal requests
+    ///   and the approvals collected for them
     pub fn update_config(
         ctx: Context<UpdateVaultConfig>,
         new_agent: Option<Pubkey>,
@@ -635,17 +690,19 @@ pub mod guardian_vault {
             vault.daily_limit = limit;
         }
         if let Some(signers) = new_signers {
-            require!(signers.len() <= MAX_SIGNERS, VaultError::TooManySigners);
             vault.signer_count = signers.len() as u8;
             vault.signers = signers;
         }
         if let Some(threshold) = new_multisig_threshold {
-            require!(
-                threshold > 0 && threshold <= vault.signer_count,
-                VaultError::InvalidThreshold
-            );
             vault.multisig_threshold = threshold;
         }
+        // Always re-validate the combined result, whichever fields changed.
+        validate_signers_and_threshold(&vault.signers, vault.multisig_threshold)?;
+
+        vault.config_epoch = vault
+            .config_epoch
+            .checked_add(1)
+            .ok_or(VaultError::Overflow)?;
 
         msg!("Vault #{} config updated", vault.guardian_id);
         Ok(())
