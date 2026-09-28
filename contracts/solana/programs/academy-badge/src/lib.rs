@@ -19,7 +19,13 @@
 //! and cannot be transferred.
 //!
 //! ## Security
-//! - Only `badge_authority` can mint badges
+//! - Only `badge_authority` can mint badges (`has_one = badge_authority`)
+//! - Only the config `authority` can revoke or reconfigure (`has_one = authority`)
+//! - Every config is a PDA `[b"badge_config", authority]`, and *anyone* can
+//!   create one for themselves. A receipt is therefore bound to the config that
+//!   issued it twice: its address is derived from that config, and it stores the
+//!   config key, which revoke/verify check (`has_one = badge_config`). A rogue
+//!   config can neither revoke, squat, nor vouch for another config's badges.
 //! - Merkle tree is managed by the program's PDA (not by any external account)
 //! - Badge verification uses the Merkle proof against the on-chain root
 //! - Batch minting is capped at 25 badges per transaction (to fit in compute budget)
@@ -41,7 +47,7 @@ const MAX_URI_LEN: usize = 256;
 // ─────────────────────────────────────────────────
 
 /// Badge category determines the type of achievement.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq, InitSpace)]
 #[repr(u8)]
 pub enum BadgeCategory {
     HouseMembership = 0,
@@ -52,7 +58,7 @@ pub enum BadgeCategory {
 }
 
 /// House affiliation for House Membership badges.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq, InitSpace)]
 #[repr(u8)]
 pub enum House {
     Lumina = 0,
@@ -65,7 +71,7 @@ pub enum House {
 }
 
 /// Gate index for Gate Completion badges (0-9 maps to the Ten Gates).
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq, InitSpace)]
 #[repr(u8)]
 pub enum GateIndex {
     Foundation = 0, // 396 Hz — Lyssandria
@@ -81,7 +87,7 @@ pub enum GateIndex {
 }
 
 /// Rank for Rank Advancement badges.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq, InitSpace)]
 #[repr(u8)]
 pub enum Rank {
     Apprentice = 0,
@@ -159,10 +165,14 @@ pub struct BadgeData {
 }
 
 /// Badge verification receipt — proof that a wallet holds a specific badge.
-/// PDA seeds: [b"badge_receipt", recipient.key(), badge_hash]
+/// PDA seeds: [b"badge_receipt", badge_config.key(), recipient.key(), &[category], &[category_id]]
 #[account]
 #[derive(InitSpace)]
 pub struct BadgeReceipt {
+    /// The BadgeConfig that issued this receipt. Only that config's authority
+    /// can revoke it, and it only verifies against that config.
+    pub badge_config: Pubkey,
+
     /// The wallet that owns this badge.
     pub recipient: Pubkey,
 
@@ -229,6 +239,9 @@ pub enum BadgeError {
 
     #[msg("Arithmetic overflow")]
     Overflow,
+
+    #[msg("Badge receipt was issued by a different badge config")]
+    ConfigMismatch,
 }
 
 // ─────────────────────────────────────────────────
@@ -290,11 +303,8 @@ pub mod academy_badge {
     ) -> Result<()> {
         let config = &mut ctx.accounts.badge_config;
 
+        // badge_authority is enforced by `has_one` on the accounts struct.
         require!(config.is_active, BadgeError::SystemNotActive);
-        require!(
-            config.badge_authority == ctx.accounts.badge_authority.key(),
-            BadgeError::UnauthorizedBadgeAuthority
-        );
         require!(name.len() <= MAX_NAME_LEN, BadgeError::NameTooLong);
         require!(uri.len() <= MAX_URI_LEN, BadgeError::UriTooLong);
 
@@ -319,6 +329,7 @@ pub mod academy_badge {
 
         // Initialize receipt PDA
         let receipt = &mut ctx.accounts.badge_receipt;
+        receipt.badge_config = config.key();
         receipt.recipient = ctx.accounts.recipient.key();
         receipt.category = category;
         receipt.category_id = category_id;
@@ -371,11 +382,8 @@ pub mod academy_badge {
     ) -> Result<()> {
         let config = &mut ctx.accounts.badge_config;
 
+        // badge_authority is enforced by `has_one` on the accounts struct.
         require!(config.is_active, BadgeError::SystemNotActive);
-        require!(
-            config.badge_authority == ctx.accounts.badge_authority.key(),
-            BadgeError::UnauthorizedBadgeAuthority
-        );
         require!(name.len() <= MAX_NAME_LEN, BadgeError::NameTooLong);
         require!(uri.len() <= MAX_URI_LEN, BadgeError::UriTooLong);
 
@@ -412,6 +420,9 @@ pub mod academy_badge {
     ///
     /// Checks the BadgeReceipt PDA and validates it hasn't been revoked.
     /// Returns success if the badge is valid, error if not.
+    ///
+    /// The caller names the `badge_config` it trusts; a receipt issued by any
+    /// other config (e.g. one an attacker created for themselves) is rejected.
     pub fn verify_badge(ctx: Context<VerifyBadge>) -> Result<()> {
         let receipt = &ctx.accounts.badge_receipt;
 
@@ -434,14 +445,10 @@ pub mod academy_badge {
     /// Revoke a badge (soft delete — marks receipt as invalid).
     ///
     /// # Security
-    /// - Only `authority` can revoke badges
+    /// - Only the `authority` of the config that issued the receipt can revoke
+    ///   it (`has_one = authority` on the config, `has_one = badge_config` on
+    ///   the receipt). Recipients cannot revoke their own badges.
     pub fn revoke_badge(ctx: Context<RevokeBadge>) -> Result<()> {
-        let config = &ctx.accounts.badge_config;
-        require!(
-            config.authority == ctx.accounts.authority.key(),
-            BadgeError::UnauthorizedAuthority
-        );
-
         let receipt = &mut ctx.accounts.badge_receipt;
         receipt.is_valid = false;
 
@@ -460,12 +467,8 @@ pub mod academy_badge {
         ctx: Context<UpdateConfig>,
         new_badge_authority: Pubkey,
     ) -> Result<()> {
+        // authority is enforced by `has_one` on the accounts struct.
         let config = &mut ctx.accounts.badge_config;
-        require!(
-            config.authority == ctx.accounts.authority.key(),
-            BadgeError::UnauthorizedAuthority
-        );
-
         config.badge_authority = new_badge_authority;
         msg!("Badge authority updated to {}", new_badge_authority);
         Ok(())
@@ -473,12 +476,8 @@ pub mod academy_badge {
 
     /// Toggle badge system active status.
     pub fn set_active(ctx: Context<UpdateConfig>, is_active: bool) -> Result<()> {
+        // authority is enforced by `has_one` on the accounts struct.
         let config = &mut ctx.accounts.badge_config;
-        require!(
-            config.authority == ctx.accounts.authority.key(),
-            BadgeError::UnauthorizedAuthority
-        );
-
         config.is_active = is_active;
         msg!(
             "Badge system {}",
@@ -516,15 +515,23 @@ pub struct Initialize<'info> {
 #[derive(Accounts)]
 #[instruction(category: BadgeCategory, category_id: u8)]
 pub struct MintBadge<'info> {
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"badge_config", badge_config.authority.as_ref()],
+        bump = badge_config.bump,
+        has_one = badge_authority @ BadgeError::UnauthorizedBadgeAuthority
+    )]
     pub badge_config: Account<'info, BadgeConfig>,
 
+    /// Seeds include the issuing config, so a receipt from one config can never
+    /// occupy (squat / front-run) the address another config would mint to.
     #[account(
         init,
         payer = badge_authority,
         space = 8 + BadgeReceipt::INIT_SPACE,
         seeds = [
             b"badge_receipt",
+            badge_config.key().as_ref(),
             recipient.key().as_ref(),
             &[category as u8],
             &[category_id],
@@ -544,7 +551,12 @@ pub struct MintBadge<'info> {
 
 #[derive(Accounts)]
 pub struct BatchMint<'info> {
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"badge_config", badge_config.authority.as_ref()],
+        bump = badge_config.bump,
+        has_one = badge_authority @ BadgeError::UnauthorizedBadgeAuthority
+    )]
     pub badge_config: Account<'info, BadgeConfig>,
 
     #[account(mut)]
@@ -555,6 +567,11 @@ pub struct BatchMint<'info> {
 
 #[derive(Accounts)]
 pub struct VerifyBadge<'info> {
+    /// The config the verifier trusts.
+    #[account(seeds = [b"badge_config", badge_config.authority.as_ref()], bump = badge_config.bump)]
+    pub badge_config: Account<'info, BadgeConfig>,
+
+    #[account(has_one = badge_config @ BadgeError::ConfigMismatch)]
     pub badge_receipt: Account<'info, BadgeReceipt>,
 
     /// CHECK: The wallet claiming to hold the badge.
@@ -563,9 +580,14 @@ pub struct VerifyBadge<'info> {
 
 #[derive(Accounts)]
 pub struct RevokeBadge<'info> {
+    #[account(
+        seeds = [b"badge_config", badge_config.authority.as_ref()],
+        bump = badge_config.bump,
+        has_one = authority @ BadgeError::UnauthorizedAuthority
+    )]
     pub badge_config: Account<'info, BadgeConfig>,
 
-    #[account(mut)]
+    #[account(mut, has_one = badge_config @ BadgeError::ConfigMismatch)]
     pub badge_receipt: Account<'info, BadgeReceipt>,
 
     pub authority: Signer<'info>,
@@ -573,7 +595,12 @@ pub struct RevokeBadge<'info> {
 
 #[derive(Accounts)]
 pub struct UpdateConfig<'info> {
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"badge_config", badge_config.authority.as_ref()],
+        bump = badge_config.bump,
+        has_one = authority @ BadgeError::UnauthorizedAuthority
+    )]
     pub badge_config: Account<'info, BadgeConfig>,
 
     pub authority: Signer<'info>,

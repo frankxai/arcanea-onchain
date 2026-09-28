@@ -23,7 +23,7 @@
 use anchor_lang::prelude::*;
 use anchor_lang::system_program;
 
-declare_id!("GrdVlt1111111111111111111111111111111111111");
+declare_id!("GrdVLt1111111111111111111111111111111111111");
 
 /// Maximum number of multi-sig signers.
 const MAX_SIGNERS: usize = 5;
@@ -173,6 +173,9 @@ pub enum VaultError {
 
     #[msg("Amount must be greater than zero")]
     ZeroAmount,
+
+    #[msg("Withdrawal request belongs to a different vault")]
+    VaultMismatch,
 }
 
 // ─────────────────────────────────────────────────
@@ -415,6 +418,13 @@ pub mod guardian_vault {
 
         let vault = &ctx.accounts.vault_config;
         require!(vault.is_active, VaultError::VaultNotActive);
+
+        // Documented intent: "The initiator can be the agent or any signer."
+        let initiator = ctx.accounts.initiator.key();
+        require!(
+            initiator == vault.agent || vault.signers.contains(&initiator),
+            VaultError::UnauthorizedSigner
+        );
 
         let request = &mut ctx.accounts.withdrawal_request;
         request.vault = ctx.accounts.vault_config.key();
@@ -672,7 +682,7 @@ pub struct InitializeVault<'info> {
         init,
         payer = admin,
         space = 8 + VaultConfig::INIT_SPACE,
-        seeds = [b"vault", &[guardian_id], admin.key().as_ref()],
+        seeds = [b"vault".as_ref(), &[guardian_id], admin.key().as_ref()],
         bump
     )]
     pub vault_config: Account<'info, VaultConfig>,
@@ -736,7 +746,12 @@ pub struct CreateWithdrawalRequest<'info> {
 pub struct ApproveWithdrawal<'info> {
     pub vault_config: Account<'info, VaultConfig>,
 
-    #[account(mut)]
+    /// Must belong to `vault_config`: otherwise a signer of *any* vault (e.g.
+    /// one an attacker created) could add approvals to this vault's request.
+    #[account(
+        mut,
+        constraint = withdrawal_request.vault == vault_config.key() @ VaultError::VaultMismatch
+    )]
     pub withdrawal_request: Account<'info, WithdrawalRequest>,
 
     pub signer: Signer<'info>,
@@ -747,7 +762,12 @@ pub struct ExecuteWithdrawal<'info> {
     #[account(mut)]
     pub vault_config: Account<'info, VaultConfig>,
 
-    #[account(mut)]
+    /// Must belong to `vault_config`: otherwise a request approved on an
+    /// attacker's own 1-of-1 vault could be executed against this vault.
+    #[account(
+        mut,
+        constraint = withdrawal_request.vault == vault_config.key() @ VaultError::VaultMismatch
+    )]
     pub withdrawal_request: Account<'info, WithdrawalRequest>,
 
     /// CHECK: Must match withdrawal_request.destination.

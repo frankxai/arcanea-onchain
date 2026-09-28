@@ -39,7 +39,7 @@ const MAX_URI_LEN: usize = 256;
 // ─────────────────────────────────────────────────
 
 /// The Five Elements of Arcanea (plus Spirit as Lumina's Void counterpart).
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq, InitSpace)]
 #[repr(u8)]
 pub enum Element {
     Fire = 0,   // Red, orange, gold — energy, transformation
@@ -51,7 +51,7 @@ pub enum Element {
 }
 
 /// The Ten Guardian deities who keep the Gates.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq, InitSpace)]
 #[repr(u8)]
 pub enum Guardian {
     Lyssandria = 0, // Foundation Gate, 396 Hz, Earth
@@ -68,7 +68,7 @@ pub enum Guardian {
 
 /// Magic ranks based on number of Gates opened.
 /// 0-2 = Apprentice, 3-4 = Mage, 5-6 = Master, 7-8 = Archmage, 9-10 = Luminor
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq, InitSpace)]
 #[repr(u8)]
 pub enum Rank {
     Apprentice = 0,
@@ -79,7 +79,7 @@ pub enum Rank {
 }
 
 /// The Seven Academy Houses.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq, InitSpace)]
 #[repr(u8)]
 pub enum House {
     Lumina = 0,
@@ -92,7 +92,7 @@ pub enum House {
 }
 
 /// NFT rarity tier.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq, InitSpace)]
 #[repr(u8)]
 pub enum Tier {
     Common = 0,    // Soulbound badges, fragments
@@ -148,7 +148,7 @@ pub struct CollectionConfig {
 }
 
 /// On-chain Arcanean metadata for a single NFT.
-/// PDA seeds: [b"arcanean_meta", mint.key()]
+/// PDA seeds: [b"arcanean_meta", collection_config.key(), mint.key()]
 #[account]
 #[derive(InitSpace)]
 pub struct ArcaneanMetadata {
@@ -335,7 +335,7 @@ pub mod guardian_nft {
         // Initialize metadata PDA
         let metadata = &mut ctx.accounts.arcanean_metadata;
         metadata.mint = ctx.accounts.nft_mint.key();
-        metadata.collection = ctx.accounts.collection_config.key();
+        metadata.collection = config.key();
         metadata.element = element;
         metadata.guardian = guardian;
         metadata.rank = Rank::Apprentice;
@@ -381,11 +381,8 @@ pub mod guardian_nft {
             ArcaneanError::UnauthorizedGuardianAuthority
         );
 
+        // metadata.collection == collection_config is enforced on the accounts struct.
         let metadata = &mut ctx.accounts.arcanean_metadata;
-        require!(
-            metadata.collection == ctx.accounts.collection_config.key(),
-            ArcaneanError::CollectionMismatch
-        );
 
         let old_level = metadata.gate_level;
         let old_rank = metadata.rank;
@@ -522,7 +519,9 @@ pub struct MintNft<'info> {
         init,
         payer = mint_authority,
         space = 8 + ArcaneanMetadata::INIT_SPACE,
-        seeds = [b"arcanean_meta", nft_mint.key().as_ref()],
+        // Seeds include the collection, so another (e.g. attacker-created)
+        // collection cannot squat this mint's metadata address.
+        seeds = [b"arcanean_meta", collection_config.key().as_ref(), nft_mint.key().as_ref()],
         bump
     )]
     pub arcanean_metadata: Account<'info, ArcaneanMetadata>,
@@ -545,7 +544,12 @@ pub struct MintNft<'info> {
 pub struct EvolveAttributes<'info> {
     pub collection_config: Account<'info, CollectionConfig>,
 
-    #[account(mut)]
+    /// Shared by `evolve_attributes` and `set_soulbound`: the metadata must
+    /// belong to `collection_config`, whose authorities are checked in the handler.
+    #[account(
+        mut,
+        constraint = arcanean_metadata.collection == collection_config.key() @ ArcaneanError::CollectionMismatch
+    )]
     pub arcanean_metadata: Account<'info, ArcaneanMetadata>,
 
     pub guardian_authority: Signer<'info>,
