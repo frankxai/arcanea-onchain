@@ -38,13 +38,22 @@ jobs:
           solana-cli-version: '2.1.21'
           node-version: '20'
 
-      # The npm package ships the anchor binary without the exec bit; its JS
-      # wrapper then prints "Could not find globally installed anchor" and
-      # EXITS 0, so every anchor command silently no-ops green. Fix the bit and
-      # fail hard unless the real CLI answers.
-      - name: Make anchor CLI executable and verify it
+      # setup-anchor installs @coral-xyz/anchor-cli from npm. That package ships
+      # its binary without the exec bit, and the 0.31.1 package actually
+      # contains a 0.31.0 binary, so its JS wrapper refuses to run it — then
+      # prints "Could not find globally installed anchor" and EXITS 0, making
+      # every anchor command a silent green no-op. Use the official release
+      # binary instead and fail hard unless it answers with the right version.
+      - name: Install official anchor-cli 0.31.1 binary
         run: |
-          chmod +x "$(npm root -g)/@coral-xyz/anchor-cli/anchor"
+          mkdir -p "$HOME/.anchor-bin"
+          curl -sSfL -o "$HOME/.anchor-bin/anchor"             https://github.com/solana-foundation/anchor/releases/download/v0.31.1/anchor-0.31.1-x86_64-unknown-linux-gnu
+          chmod +x "$HOME/.anchor-bin/anchor"
+          echo "$HOME/.anchor-bin" >> "$GITHUB_PATH"
+
+      - name: Verify anchor CLI
+        run: |
+          which anchor
           anchor --version | tee /dev/stderr | grep -q 'anchor-cli 0.31.1'
 
       - name: Create throwaway localnet wallet
