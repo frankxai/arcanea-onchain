@@ -5,10 +5,15 @@ on:
     branches: [main]
     paths:
       - 'contracts/evm/**'
+      - '.gitmodules'
+      - '.github/workflows/evm-tests.yml'
   pull_request:
     branches: [main]
     paths:
       - 'contracts/evm/**'
+      - '.gitmodules'
+      - '.github/workflows/evm-tests.yml'
+  workflow_dispatch:
 
 jobs:
   foundry-test:
@@ -20,6 +25,8 @@ jobs:
           submodules: recursive
 
       - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.5.1
 
       - name: Run Foundry tests
         working-directory: contracts/evm

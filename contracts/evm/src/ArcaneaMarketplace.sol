@@ -27,7 +27,7 @@ pragma solidity ^0.8.24;
  */
 
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import "@openzeppelin/contracts/token/common/ERC2981.sol";
+import "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -296,7 +296,11 @@ contract ArcaneaMarketplace is AccessControl, Pausable, ReentrancyGuard {
         uint256 price,
         uint64 startTime,
         uint64 endTime
-    ) external whenNotPaused returns (uint256 listingId) {
+    )
+        external
+        whenNotPaused
+        returns (uint256 listingId)
+    {
         if (price == 0) revert ZeroPrice();
         _validateOwnershipAndApproval(nftContract, tokenId);
         if (endTime != 0 && endTime <= (startTime == 0 ? uint64(block.timestamp) : startTime)) {
@@ -317,13 +321,7 @@ contract ArcaneaMarketplace is AccessControl, Pausable, ReentrancyGuard {
         });
 
         emit DirectListingCreated(
-            listingId,
-            nftContract,
-            tokenId,
-            msg.sender,
-            price,
-            directListings[listingId].startTime,
-            endTime
+            listingId, nftContract, tokenId, msg.sender, price, directListings[listingId].startTime, endTime
         );
     }
 
@@ -399,7 +397,11 @@ contract ArcaneaMarketplace is AccessControl, Pausable, ReentrancyGuard {
         uint256 reservePrice,
         uint64 startTime,
         uint64 endTime
-    ) external whenNotPaused returns (uint256 auctionId) {
+    )
+        external
+        whenNotPaused
+        returns (uint256 auctionId)
+    {
         _validateOwnershipAndApproval(nftContract, tokenId);
         uint64 effectiveStart = startTime == 0 ? uint64(block.timestamp) : startTime;
         if (endTime <= effectiveStart) revert InvalidTimeRange();
@@ -512,9 +514,7 @@ contract ArcaneaMarketplace is AccessControl, Pausable, ReentrancyGuard {
             }
             _safeTransferETH(auction.seller, sellerProceeds);
 
-            emit EnglishAuctionSettled(
-                auctionId, auction.highestBidder, auction.highestBid, royaltyAmount, platformFee
-            );
+            emit EnglishAuctionSettled(auctionId, auction.highestBidder, auction.highestBid, royaltyAmount, platformFee);
         } else {
             // Auction failed (no bids or reserve not met) — return NFT to seller
             IERC721(auction.nftContract).safeTransferFrom(address(this), auction.seller, auction.tokenId);
@@ -564,7 +564,11 @@ contract ArcaneaMarketplace is AccessControl, Pausable, ReentrancyGuard {
         uint256 endPrice,
         uint64 startTime,
         uint64 endTime
-    ) external whenNotPaused returns (uint256 auctionId) {
+    )
+        external
+        whenNotPaused
+        returns (uint256 auctionId)
+    {
         if (startPrice <= endPrice) revert StartPriceMustExceedEndPrice();
         _validateOwnershipAndApproval(nftContract, tokenId);
         uint64 effectiveStart = startTime == 0 ? uint64(block.timestamp) : startTime;
@@ -587,7 +591,9 @@ contract ArcaneaMarketplace is AccessControl, Pausable, ReentrancyGuard {
             status: ListingStatus.Active
         });
 
-        emit DutchAuctionCreated(auctionId, nftContract, tokenId, msg.sender, startPrice, endPrice, effectiveStart, endTime);
+        emit DutchAuctionCreated(
+            auctionId, nftContract, tokenId, msg.sender, startPrice, endPrice, effectiveStart, endTime
+        );
     }
 
     /**
@@ -672,7 +678,11 @@ contract ArcaneaMarketplace is AccessControl, Pausable, ReentrancyGuard {
      * @param tokenId      Token ID to make an offer on.
      * @param expiresAt    Offer expiration timestamp. Must be in the future.
      */
-    function createOffer(address nftContract, uint256 tokenId, uint64 expiresAt)
+    function createOffer(
+        address nftContract,
+        uint256 tokenId,
+        uint64 expiresAt
+    )
         external
         payable
         whenNotPaused
@@ -755,7 +765,7 @@ contract ArcaneaMarketplace is AccessControl, Pausable, ReentrancyGuard {
 
     /// @notice Update platform fee. Max 10% (1000 bps).
     function setPlatformFee(uint256 newFeeBps) external onlyRole(ADMIN_ROLE) {
-        if (newFeeBps > 1_000) revert InvalidFeeBps(newFeeBps);
+        if (newFeeBps > 1000) revert InvalidFeeBps(newFeeBps);
         uint256 oldFee = platformFeeBps;
         platformFeeBps = newFeeBps;
 
@@ -830,7 +840,11 @@ contract ArcaneaMarketplace is AccessControl, Pausable, ReentrancyGuard {
      * @return royaltyAmount   Amount going to royalty receiver.
      * @return royaltyReceiver Address of royalty receiver (address(0) if none).
      */
-    function _calculateFees(address nftContract, uint256 tokenId, uint256 salePrice)
+    function _calculateFees(
+        address nftContract,
+        uint256 tokenId,
+        uint256 salePrice
+    )
         internal
         view
         returns (uint256 platformFee, uint256 royaltyAmount, address royaltyReceiver)
@@ -838,9 +852,7 @@ contract ArcaneaMarketplace is AccessControl, Pausable, ReentrancyGuard {
         platformFee = salePrice * platformFeeBps / BPS_DENOMINATOR;
 
         // Query ERC-2981 royalty info
-        try IERC2981(nftContract).royaltyInfo(tokenId, salePrice) returns (
-            address receiver, uint256 amount
-        ) {
+        try IERC2981(nftContract).royaltyInfo(tokenId, salePrice) returns (address receiver, uint256 amount) {
             royaltyReceiver = receiver;
             royaltyAmount = amount;
 
@@ -874,9 +886,7 @@ contract ArcaneaMarketplace is AccessControl, Pausable, ReentrancyGuard {
     function _validateOwnershipAndApproval(address nftContract, uint256 tokenId) internal view {
         IERC721 nft = IERC721(nftContract);
         if (nft.ownerOf(tokenId) != msg.sender) revert NotTokenOwner();
-        if (
-            nft.getApproved(tokenId) != address(this) && !nft.isApprovedForAll(msg.sender, address(this))
-        ) {
+        if (nft.getApproved(tokenId) != address(this) && !nft.isApprovedForAll(msg.sender, address(this))) {
             revert NotApprovedForMarketplace();
         }
     }
@@ -887,12 +897,4 @@ contract ArcaneaMarketplace is AccessControl, Pausable, ReentrancyGuard {
     function supportsInterface(bytes4 interfaceId) public view override(AccessControl) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
-}
-
-/// @dev Minimal ERC-2981 interface for royalty queries.
-interface IERC2981 {
-    function royaltyInfo(uint256 tokenId, uint256 salePrice)
-        external
-        view
-        returns (address receiver, uint256 royaltyAmount);
 }

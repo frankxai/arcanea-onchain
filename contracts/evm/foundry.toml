@@ -6,7 +6,7 @@ solc = "0.8.24"
 evm_version = "cancun"
 optimizer = true
 optimizer_runs = 200
-via_ir = false
+via_ir = true
 
 # Remappings for OpenZeppelin
 remappings = [
@@ -39,8 +39,6 @@ fuzz.runs = 1024
 invariant.runs = 512
 
 # Gas reporting
-[profile.default.gas_report]
-enabled = true
 
 # RPC endpoints for fork testing (load from environment)
 [rpc_endpoints]
