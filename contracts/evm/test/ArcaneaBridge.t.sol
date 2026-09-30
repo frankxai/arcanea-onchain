@@ -13,6 +13,7 @@ contract ArcaneaBridgeTest is Test {
     address internal admin = makeAddr("admin");
     address internal alice = makeAddr("alice");
     address internal relayer = makeAddr("relayer");
+    address internal relayer2 = makeAddr("relayer2"); // a second, independent relayer
     address internal ops = makeAddr("ops"); // ADMIN_ROLE only — not a relayer
     bytes32 internal constant SOL_ACCOUNT = bytes32(uint256(0xA11CE));
 
@@ -29,6 +30,7 @@ contract ArcaneaBridgeTest is Test {
         vm.startPrank(admin);
         bridge.setCollectionWhitelist(address(nft), true);
         bridge.grantRole(bridge.RELAYER_ROLE(), relayer);
+        bridge.grantRole(bridge.RELAYER_ROLE(), relayer2);
         bridge.grantRole(bridge.ADMIN_ROLE(), ops);
         vm.stopPrank();
 
@@ -182,10 +184,12 @@ contract ArcaneaBridgeTest is Test {
         _assessLowValue();
         uint256 id = _bridge();
 
-        vm.startPrank(relayer);
+        vm.prank(relayer);
         bridge.acknowledgeBridgeRequest(id);
+
+        vm.warp(block.timestamp + bridge.ackTimeout());
+        vm.prank(relayer);
         bridge.failBridgeRequest(id, "solana mint failed");
-        vm.stopPrank();
 
         assertEq(nft.ownerOf(tokenId), alice);
         assertEq(_status(id), uint8(ArcaneaBridge.BridgeStatus.Failed));
@@ -238,10 +242,12 @@ contract ArcaneaBridgeTest is Test {
         assertFalse(bridge.isHighValueCollection(address(nft)));
 
         uint256 id = _bridge();
-        assertTrue(bridge.getBridgeRequest(id).guardianApproved);
+        // Low-value is not stored as an approval; it is re-derived at acknowledge time.
+        assertFalse(bridge.getBridgeRequest(id).guardianApproved);
 
         vm.prank(relayer);
         bridge.acknowledgeBridgeRequest(id);
+        assertEq(_status(id), uint8(ArcaneaBridge.BridgeStatus.Acknowledged));
     }
 
     function test_H2_RaisingThresholdOrClearingAssessmentIsRespected() public {
@@ -264,5 +270,126 @@ contract ArcaneaBridgeTest is Test {
             abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, alice, adminRole)
         );
         bridge.setCollectionAssessedValue(address(nft), 0);
+    }
+    // ── Second-model audit (Codex) C1: failing an acknowledged request
+    // ───
+    // After acknowledge the Solana mint may already be finalizing. Returning the NFT
+    // on Base by relayer fiat (a different relayer, or the same one retrying after an
+    // RPC timeout) would put it on both chains.
+
+    function _ackLowValue() internal returns (uint256 id) {
+        _assessLowValue();
+        id = _bridge();
+        vm.prank(relayer);
+        bridge.acknowledgeBridgeRequest(id);
+    }
+
+    function test_C1_OtherRelayerCannotFailAcknowledgedRequest() public {
+        uint256 id = _ackLowValue();
+
+        // Not even after the ack timeout: only the acknowledging relayer knows whether it minted.
+        vm.warp(block.timestamp + bridge.ackTimeout() + 1);
+        vm.prank(relayer2);
+        vm.expectRevert(abi.encodeWithSelector(ArcaneaBridge.NotAcknowledgingRelayer.selector, id, relayer));
+        bridge.failBridgeRequest(id, "other relayer says it failed");
+
+        assertEq(nft.ownerOf(tokenId), address(bridge), "NFT stays locked");
+        assertEq(_status(id), uint8(ArcaneaBridge.BridgeStatus.Acknowledged));
+    }
+
+    /// The deployer admin also holds RELAYER_ROLE; that must not let it fail another relayer's ack.
+    function test_C1_AdminHoldingRelayerRoleCannotFailAnotherRelayersAck() public {
+        uint256 id = _ackLowValue();
+
+        vm.warp(block.timestamp + bridge.ackTimeout() + 1);
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(ArcaneaBridge.NotAcknowledgingRelayer.selector, id, relayer));
+        bridge.failBridgeRequest(id, "admin override");
+
+        assertEq(nft.ownerOf(tokenId), address(bridge));
+    }
+
+    function test_C1_AckingRelayerCannotFailBeforeAckTimeout() public {
+        uint256 id = _ackLowValue();
+        uint256 availableAt = block.timestamp + bridge.ackTimeout();
+
+        // e.g. an RPC timeout right after acknowledge while the Solana mint is still finalizing
+        vm.prank(relayer);
+        vm.expectRevert(abi.encodeWithSelector(ArcaneaBridge.AckTimeoutNotElapsed.selector, availableAt));
+        bridge.failBridgeRequest(id, "rpc timeout");
+
+        vm.warp(availableAt - 1);
+        vm.prank(relayer);
+        vm.expectRevert(abi.encodeWithSelector(ArcaneaBridge.AckTimeoutNotElapsed.selector, availableAt));
+        bridge.failBridgeRequest(id, "rpc timeout");
+
+        assertEq(nft.ownerOf(tokenId), address(bridge));
+        assertEq(_status(id), uint8(ArcaneaBridge.BridgeStatus.Acknowledged));
+    }
+
+    /// Guard: the acknowledging relayer can still fail after the timeout, and the
+    /// revocation event the Solana side must honor is emitted.
+    function test_C1_AckingRelayerCanFailAfterAckTimeoutAndEmitsRevocation() public {
+        uint256 id = _ackLowValue();
+        assertEq(bridge.acknowledgedBy(id), relayer);
+
+        vm.warp(bridge.ackDeadline(id));
+        vm.expectEmit(true, true, false, true, address(bridge));
+        emit ArcaneaBridge.BridgeAcknowledgementRevoked(id, relayer, SOL_ACCOUNT);
+        vm.prank(relayer);
+        bridge.failBridgeRequest(id, "solana mint failed");
+
+        assertEq(nft.ownerOf(tokenId), alice);
+        assertEq(_status(id), uint8(ArcaneaBridge.BridgeStatus.Failed));
+    }
+
+    /// Guard: the deadline is snapshotted at acknowledge, and the timeout has a floor.
+    function test_C1_AckDeadlineIsSnapshottedAndTimeoutHasFloor() public {
+        uint256 id = _ackLowValue();
+        uint256 deadline = bridge.ackDeadline(id);
+
+        vm.startPrank(admin);
+        bridge.setAckTimeout(30 days);
+        uint256 minTimeout = bridge.MIN_ACK_TIMEOUT();
+        vm.expectRevert(abi.encodeWithSelector(ArcaneaBridge.AckTimeoutTooShort.selector, minTimeout));
+        bridge.setAckTimeout(minTimeout - 1);
+        vm.stopPrank();
+
+        assertEq(bridge.ackDeadline(id), deadline, "existing deadline unchanged");
+    }
+
+    // ── Second-model audit (Codex) C2: reclassification must reach outstanding requests
+    // ──
+
+    /// A request created while the collection was assessed low-value must need
+    /// Guardian approval if the assessment is cleared before the relayer acknowledges.
+    function test_C2_ClearingAssessmentGatesOutstandingRequest() public {
+        _assessLowValue();
+        uint256 id = _bridge(); // created as low-value
+
+        vm.prank(admin);
+        bridge.clearCollectionAssessedValue(address(nft));
+
+        vm.prank(relayer);
+        vm.expectRevert(abi.encodeWithSelector(ArcaneaBridge.HighValueTransferRequiresGuardianApproval.selector, id));
+        bridge.acknowledgeBridgeRequest(id);
+
+        vm.prank(admin);
+        bridge.approveHighValueBridge(id);
+        vm.prank(relayer);
+        bridge.acknowledgeBridgeRequest(id);
+        assertEq(_status(id), uint8(ArcaneaBridge.BridgeStatus.Acknowledged));
+    }
+
+    function test_C2_LoweringThresholdGatesOutstandingRequest() public {
+        _assessLowValue(); // 0.1 ether
+        uint256 id = _bridge();
+
+        vm.prank(admin);
+        bridge.setHighValueThreshold(0.05 ether);
+
+        vm.prank(relayer);
+        vm.expectRevert(abi.encodeWithSelector(ArcaneaBridge.HighValueTransferRequiresGuardianApproval.selector, id));
+        bridge.acknowledgeBridgeRequest(id);
     }
 }

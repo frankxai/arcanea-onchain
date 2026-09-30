@@ -26,11 +26,33 @@ pragma solidity ^0.8.24;
  *     per-collection value: a collection is low-value only if an admin has
  *     explicitly assessed it BELOW `highValueThreshold`. Unassessed collections
  *     default to high-value and require Guardian approval.
+ *     The high-value decision is re-evaluated at acknowledge time (the last
+ *     point before the Solana mint), so reclassifying a collection also applies
+ *     to requests that are already outstanding. An explicit Guardian approval
+ *     is the only stored override.
  *   - Outbound requests are two-phase on the relayer side: the relayer must
  *     `acknowledgeBridgeRequest()` BEFORE it mints on Solana, and the requester
  *     can only cancel while the request is still Pending (unacknowledged) and
  *     `cancelTimeout` has elapsed. This closes the cancel-after-mint race that
  *     would otherwise leave the NFT on both chains.
+ *   - Once Acknowledged, the NFT can no longer be returned on Base by fiat. The
+ *     request can only be completed, or failed by the SAME relayer that
+ *     acknowledged it, and only after that request's `ackDeadline`
+ *     (acknowledge time + `ackTimeout`, snapshotted at acknowledge). No other
+ *     relayer and no admin can fail it.
+ *
+ * Residual trust assumption (acknowledged requests):
+ *   Base cannot observe Solana, so the EVM side cannot prove the destination
+ *   mint did NOT happen. Safety of `failBridgeRequest` on an acknowledged request
+ *   rests on the acknowledging relayer (a single key) honoring this protocol:
+ *     (1) it mints on Solana only before the request's `ackDeadline`, carrying
+ *         the EVM requestId so the Solana side can dedupe by requestId, and
+ *     (2) it fails an acknowledged request only if it did not mint, and never
+ *         mints for a request after `BridgeAcknowledgementRevoked` was emitted.
+ *   A Solana-side bridge program must enforce (1) (reject a mint whose
+ *   deadline has passed or whose requestId was already used) before mainnet.
+ *   If the acknowledging relayer disappears, an acknowledged request stays
+ *   locked on Base: that is the safe failure mode (no duplicate), not a bug.
  *   - Emergency pause stops all bridge operations
  *   - Configurable bridge fee to prevent spam
  *   - Per-token bridge tracking to prevent double-minting
@@ -90,7 +112,8 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
         address requester; // EVM address that initiated the bridge
         uint256 timestamp;
         BridgeStatus status;
-        bool guardianApproved; // Whether Guardian approval was given (for high-value)
+        bool guardianApproved; // Explicit Guardian approval only. Low-value status is NOT stored:
+        // it is re-derived from the collection's current assessment at acknowledge time.
     }
 
     /// @notice Bridged token metadata preserved across chains.
@@ -126,6 +149,9 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
     error BridgeRequestNotAcknowledged(uint256 requestId);
     error InvalidBridgeDirection(uint256 requestId);
     error NotRelayerOrAdmin(address account);
+    error NotAcknowledgingRelayer(uint256 requestId, address acknowledgedBy);
+    error AckTimeoutNotElapsed(uint256 availableAt);
+    error AckTimeoutTooShort(uint256 minimum);
 
     // ──────────────────────────────────────────────
     //  Events
@@ -149,6 +175,11 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
     event CollectionValueAssessed(address indexed collection, uint256 value);
     event CollectionValueCleared(address indexed collection);
     event CancelTimeoutUpdated(uint256 oldTimeout, uint256 newTimeout);
+    event AckTimeoutUpdated(uint256 oldTimeout, uint256 newTimeout);
+
+    /// @notice The acknowledging relayer revoked its acknowledgement and the NFT was
+    ///         returned on Base. The Solana side MUST NOT mint for `requestId` after this.
+    event BridgeAcknowledgementRevoked(uint256 indexed requestId, address indexed relayer, bytes32 solanaAccount);
 
     event BridgedNFTMinted(
         address indexed nftContract, uint256 indexed tokenId, bytes32 sourceChainHash, address recipient
@@ -179,6 +210,20 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
     /// @notice Minimum time a Pending outbound request must wait before its requester
     ///         may cancel it. Gives the relayer time to acknowledge before minting.
     uint256 public cancelTimeout = 1 days;
+
+    /// @notice Lower bound for `ackTimeout`, so an admin cannot make acknowledged
+    ///         requests instantly failable.
+    uint256 public constant MIN_ACK_TIMEOUT = 1 days;
+
+    /// @notice How long after acknowledging a request its relayer must wait before
+    ///         it may fail it. Snapshotted per request at acknowledge time.
+    uint256 public ackTimeout = 7 days;
+
+    /// @notice The relayer that acknowledged each outbound request.
+    mapping(uint256 => address) public acknowledgedBy;
+
+    /// @notice Earliest time an acknowledged request may be failed by its relayer.
+    mapping(uint256 => uint256) public ackDeadline;
 
     /// @notice ADMIN_ROLE-assessed value (wei) per collection. The value basis for
     ///         the high-value check, since no on-chain price oracle is used.
@@ -281,8 +326,8 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
         lastBridgeTime[msg.sender] = block.timestamp;
         accumulatedFees += msg.value;
 
-        // Create bridge request. High-value is derived on-chain, never caller-supplied.
-        bool highValue = isHighValueCollection(nftContract);
+        // Create bridge request. High-value is derived on-chain (at acknowledge time),
+        // never caller-supplied.
         requestId = _nextRequestId++;
         bridgeRequests[requestId] = BridgeRequest({
             requestId: requestId,
@@ -293,7 +338,7 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
             requester: msg.sender,
             timestamp: block.timestamp,
             status: BridgeStatus.Pending,
-            guardianApproved: !highValue // Auto-approved only if assessed below threshold
+            guardianApproved: false // Only an explicit Guardian approval sets this
         });
 
         emit BridgeRequestCreated(
@@ -321,15 +366,24 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
      *         (and confirmed) BEFORE the relayer mints/unlocks on Solana.
      * @dev Once acknowledged, the requester can no longer cancel, so the NFT cannot
      *      be reclaimed on Base after it has been minted on Solana.
+     *
+     *      High-value status is re-derived here from the collection's CURRENT
+     *      assessment (fail-closed): a request created while the collection was
+     *      assessed low-value needs Guardian approval if the collection has since
+     *      been cleared or the threshold lowered.
      */
     function acknowledgeBridgeRequest(uint256 requestId) external onlyRole(RELAYER_ROLE) whenNotPaused {
         BridgeRequest storage request = bridgeRequests[requestId];
         if (request.requestId == 0) revert BridgeRequestNotFound(requestId);
         if (request.direction != BridgeDirection.BaseToSolana) revert InvalidBridgeDirection(requestId);
         if (request.status != BridgeStatus.Pending) revert BridgeRequestNotPending(requestId);
-        if (!request.guardianApproved) revert HighValueTransferRequiresGuardianApproval(requestId);
+        if (!request.guardianApproved && isHighValueCollection(request.nftContract)) {
+            revert HighValueTransferRequiresGuardianApproval(requestId);
+        }
 
         request.status = BridgeStatus.Acknowledged;
+        acknowledgedBy[requestId] = msg.sender;
+        ackDeadline[requestId] = block.timestamp + ackTimeout;
 
         emit BridgeAcknowledged(requestId, msg.sender);
     }
@@ -352,9 +406,12 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
     /**
      * @notice Mark a bridge request as failed and unlock the NFT back to the requester.
      * @dev A Pending (unacknowledged) request can be failed by RELAYER_ROLE or ADMIN_ROLE.
-     *      An Acknowledged request can only be failed by RELAYER_ROLE: only the relayer
-     *      knows whether the Solana mint happened, and failing a minted request would
-     *      put the NFT on both chains.
+     *      An Acknowledged request can only be failed by the relayer that acknowledged
+     *      it (and still holds RELAYER_ROLE), and only once its `ackDeadline` has
+     *      passed. Another relayer, or the same relayer retrying after an RPC timeout
+     *      while the Solana mint is still finalizing, would otherwise return the NFT
+     *      on Base while it is minted on Solana. See the residual trust assumption in
+     *      the contract header.
      */
     function failBridgeRequest(uint256 requestId, string calldata reason) external nonReentrant {
         bool isRelayer = hasRole(RELAYER_ROLE, msg.sender);
@@ -362,8 +419,13 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
 
         BridgeRequest storage request = bridgeRequests[requestId];
         if (request.requestId == 0) revert BridgeRequestNotFound(requestId);
-        if (request.status == BridgeStatus.Acknowledged) {
+        bool wasAcknowledged = request.status == BridgeStatus.Acknowledged;
+        if (wasAcknowledged) {
             if (!isRelayer) revert NotRelayerOrAdmin(msg.sender);
+            address acker = acknowledgedBy[requestId];
+            if (msg.sender != acker) revert NotAcknowledgingRelayer(requestId, acker);
+            uint256 availableAt = ackDeadline[requestId];
+            if (block.timestamp < availableAt) revert AckTimeoutNotElapsed(availableAt);
         } else if (request.status != BridgeStatus.Pending) {
             revert BridgeRequestNotPending(requestId);
         }
@@ -378,6 +440,7 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
             IERC721(request.nftContract).safeTransferFrom(address(this), request.requester, request.tokenId);
         }
 
+        if (wasAcknowledged) emit BridgeAcknowledgementRevoked(requestId, msg.sender, request.solanaAccount);
         emit BridgeFailed(requestId, reason);
     }
 
@@ -523,6 +586,17 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
         emit CancelTimeoutUpdated(old, newTimeout);
     }
 
+    /**
+     * @notice Update how long an acknowledging relayer must wait before it may fail an
+     *         acknowledged request. Applies to requests acknowledged after the change.
+     */
+    function setAckTimeout(uint256 newTimeout) external onlyRole(ADMIN_ROLE) {
+        if (newTimeout < MIN_ACK_TIMEOUT) revert AckTimeoutTooShort(MIN_ACK_TIMEOUT);
+        uint256 old = ackTimeout;
+        ackTimeout = newTimeout;
+        emit AckTimeoutUpdated(old, newTimeout);
+    }
+
     /// @notice Update the cooldown period between bridge requests.
     function setCooldownPeriod(uint256 newCooldown) external onlyRole(ADMIN_ROLE) {
         uint256 old = cooldownPeriod;
@@ -587,6 +661,7 @@ contract ArcaneaBridge is AccessControl, Pausable, ReentrancyGuard {
     /**
      * @notice Whether bridging from `collection` requires Guardian approval.
      * @dev Fail-closed: true unless an admin assessed the collection below the threshold.
+     *      Evaluated at acknowledge time, so it applies to outstanding requests too.
      */
     function isHighValueCollection(address collection) public view returns (bool) {
         return !collectionValueAssessed[collection] || collectionAssessedValue[collection] >= highValueThreshold;
