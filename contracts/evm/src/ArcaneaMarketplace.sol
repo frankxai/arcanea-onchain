@@ -878,22 +878,51 @@ contract ArcaneaMarketplace is AccessControl, Pausable, ReentrancyGuard {
     {
         platformFee = salePrice * platformFeeBps / BPS_DENOMINATOR;
 
-        // Query ERC-2981 royalty info
-        try IERC2981(nftContract).royaltyInfo(tokenId, salePrice) returns (address receiver, uint256 amount) {
-            royaltyReceiver = receiver;
-            royaltyAmount = amount;
+        (royaltyReceiver, royaltyAmount) = _queryRoyalty(nftContract, tokenId, salePrice);
 
-            // Safety: ensure platform fee + royalty don't exceed sale price. Compared without
-            // the addition so a hostile royaltyInfo (e.g. type(uint256).max) cannot overflow
-            // and revert settlement. platformFee <= salePrice since platformFeeBps is capped.
-            if (royaltyAmount > salePrice - platformFee) {
-                royaltyAmount = salePrice - platformFee;
-            }
-        } catch {
-            // NFT doesn't support ERC-2981 — no royalty
-            royaltyReceiver = address(0);
-            royaltyAmount = 0;
+        // Safety: ensure platform fee + royalty don't exceed sale price. Compared without
+        // the addition so a hostile royaltyInfo (e.g. type(uint256).max) cannot overflow
+        // and revert settlement. platformFee <= salePrice since platformFeeBps is capped.
+        if (royaltyAmount > salePrice - platformFee) {
+            royaltyAmount = salePrice - platformFee;
         }
+    }
+
+    /// @notice Gas forwarded to a collection's ERC-2981 `royaltyInfo`.
+    uint256 public constant ROYALTY_QUERY_GAS = 100_000;
+
+    /**
+     * @dev Query ERC-2981 royalty info without letting the collection block a sale.
+     *      A plain `try` would still revert on a malformed success return (short data,
+     *      or an address word with dirty upper bits) because ABI decoding happens
+     *      outside the `catch`; it would also forward 63/64 of gas and copy unbounded
+     *      return data. Here: bounded gas, a fixed 64-byte return buffer, and any
+     *      failed, short or malformed response is treated as "no royalty".
+     */
+    function _queryRoyalty(
+        address nftContract,
+        uint256 tokenId,
+        uint256 salePrice
+    )
+        internal
+        view
+        returns (address receiver, uint256 amount)
+    {
+        bytes memory callData = abi.encodeCall(IERC2981.royaltyInfo, (tokenId, salePrice));
+        uint256 gasLimit = ROYALTY_QUERY_GAS;
+        bool success;
+        uint256 returnSize;
+        uint256 word0;
+        uint256 word1;
+        assembly ("memory-safe") {
+            let out := mload(0x40) // scratch at the free memory pointer; not allocated
+            success := staticcall(gasLimit, nftContract, add(callData, 0x20), mload(callData), out, 0x40)
+            returnSize := returndatasize()
+            word0 := mload(out)
+            word1 := mload(add(out, 0x20))
+        }
+        if (!success || returnSize < 0x40 || word0 > type(uint160).max) return (address(0), 0);
+        return (address(uint160(word0)), word1);
     }
 
     /**

@@ -285,6 +285,62 @@ contract ArcaneaMarketplaceTest is Test {
         assertEq(nft.ownerOf(tokenId), buyer);
         assertEq(royaltyReceiver.balance, 0.975 ether);
     }
+    // ── Second-model audit (Codex, 3rd pass) R3: malformed royaltyInfo must not block settlement
+    // ──
+    // A successful royaltyInfo returning short data or a dirty address word reverted
+    // inside ABI decoding (outside try/catch), locking the NFT and the winning bid.
+
+    function _mockRoyaltyReturn(bytes memory ret) internal {
+        vm.mockCall(address(nft), abi.encodeWithSignature("royaltyInfo(uint256,uint256)", tokenId, 1 ether), ret);
+    }
+
+    function test_R3_ShortRoyaltyReturnCannotBlockAuctionSettlement() public {
+        uint256 auctionId = _auction(1 ether, uint64(block.timestamp + 1 days));
+        vm.prank(buyer);
+        market.placeBid{ value: 1 ether }(auctionId);
+
+        _mockRoyaltyReturn(hex"01"); // one byte
+
+        vm.warp(block.timestamp + 1 days + 1);
+        market.settleEnglishAuction(auctionId);
+
+        // Malformed => no royalty; the seller receives it instead.
+        assertEq(nft.ownerOf(tokenId), buyer);
+        assertEq(royaltyReceiver.balance, 0);
+        assertEq(seller.balance, 0.975 ether);
+    }
+
+    function test_R3_DirtyAddressRoyaltyReturnCannotBlockPurchase() public {
+        uint256 listingId = _list();
+        _mockRoyaltyReturn(abi.encode(type(uint256).max, uint256(0.05 ether))); // not a valid address word
+
+        vm.prank(buyer);
+        market.buyDirectListing{ value: 1 ether }(listingId);
+
+        assertEq(nft.ownerOf(tokenId), buyer);
+        assertEq(seller.balance, 0.975 ether);
+    }
+
+    /// Guard: a well-formed royalty is still paid, and a reverting royaltyInfo means no royalty.
+    function test_R3_WellFormedRoyaltyPaidAndRevertingRoyaltyIgnored() public {
+        uint256 listingId = _list();
+        vm.prank(buyer);
+        market.buyDirectListing{ value: 1 ether }(listingId);
+        assertEq(royaltyReceiver.balance, 0.05 ether);
+
+        vm.prank(buyer);
+        nft.setApprovalForAll(address(market), true);
+        vm.prank(buyer);
+        uint256 relist = market.createDirectListing(address(nft), tokenId, 1 ether, 0, 0);
+        vm.mockCallRevert(
+            address(nft), abi.encodeWithSignature("royaltyInfo(uint256,uint256)", tokenId, 1 ether), "nope"
+        );
+        vm.deal(bidder2, 10 ether);
+        vm.prank(bidder2);
+        market.buyDirectListing{ value: 1 ether }(relist);
+        assertEq(nft.ownerOf(tokenId), bidder2);
+        assertEq(royaltyReceiver.balance, 0.05 ether, "no royalty on the reverting query");
+    }
 }
 
 /// @dev Bids from a contract whose ERC-721 receiver hook always reverts.
