@@ -227,4 +227,14 @@ contract ArcaneaGovernanceTest is Test {
         vm.warp(block.timestamp + gov.VOTING_PERIOD() + 1);
         gov.finalizeProposal(id);
     }
+
+    /// Codex 3rd pass: `(w * 5100 + 9999) / 10000` overflowed for large accepted weights,
+    /// bricking finalization. The quorum math must work for any weight the admin can set.
+    function test_C3_LargeDelegateWeightDoesNotOverflowQuorum() public {
+        address[] memory ds = _delegates(_weights(type(uint256).max / 5100));
+        uint256 id = _finalizeWithDelegates(ds, 1);
+        assertEq(_status(id), uint8(ArcaneaGovernance.ProposalStatus.Queued));
+        (, bool delegateMet) = gov.isQuorumMet(id);
+        assertTrue(delegateMet);
+    }
 }

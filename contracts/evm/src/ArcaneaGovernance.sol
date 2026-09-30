@@ -27,6 +27,7 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract ArcaneaGovernance is AccessControl, ReentrancyGuard {
     // ──────────────────────────────────────────────
@@ -553,7 +554,8 @@ contract ArcaneaGovernance is AccessControl, ReentrancyGuard {
      *         2 => 2, 3 => 2, 100 => 51), and 0 only when there are no delegates.
      */
     function requiredDelegateWeight() public view returns (uint256) {
-        return (totalDelegateWeight * DELEGATE_QUORUM_BPS + BPS_DENOMINATOR - 1) / BPS_DENOMINATOR;
+        // mulDiv: full-precision, so no intermediate overflow for any accepted weight total.
+        return Math.mulDiv(totalDelegateWeight, DELEGATE_QUORUM_BPS, BPS_DENOMINATOR, Math.Rounding.Ceil);
     }
 
     /// @notice Get the current vote tally for a proposal.
