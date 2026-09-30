@@ -883,8 +883,10 @@ contract ArcaneaMarketplace is AccessControl, Pausable, ReentrancyGuard {
             royaltyReceiver = receiver;
             royaltyAmount = amount;
 
-            // Safety: ensure platform fee + royalty don't exceed sale price
-            if (platformFee + royaltyAmount > salePrice) {
+            // Safety: ensure platform fee + royalty don't exceed sale price. Compared without
+            // the addition so a hostile royaltyInfo (e.g. type(uint256).max) cannot overflow
+            // and revert settlement. platformFee <= salePrice since platformFeeBps is capped.
+            if (royaltyAmount > salePrice - platformFee) {
                 royaltyAmount = salePrice - platformFee;
             }
         } catch {

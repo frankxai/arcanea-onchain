@@ -244,6 +244,47 @@ contract ArcaneaMarketplaceTest is Test {
         vm.expectRevert(ArcaneaMarketplace.NoBalanceToWithdraw.selector);
         market.emergencyWithdraw(payable(admin));
     }
+    // ── Second-model audit (Codex, re-run) R2: hostile royaltyInfo must not block settlement
+    // ──
+    // platformFee + royaltyAmount overflowed (checked arithmetic) when a collection's
+    // royaltyInfo returned type(uint256).max, reverting settlement with the bid escrowed.
+
+    function test_R2_MaxRoyaltyCannotBlockAuctionSettlement() public {
+        uint256 auctionId = _auction(1 ether, uint64(block.timestamp + 1 days));
+        vm.prank(buyer);
+        market.placeBid{ value: 1 ether }(auctionId);
+
+        // The collection turns hostile after bidding.
+        vm.mockCall(
+            address(nft),
+            abi.encodeWithSignature("royaltyInfo(uint256,uint256)", tokenId, 1 ether),
+            abi.encode(royaltyReceiver, type(uint256).max)
+        );
+
+        vm.warp(block.timestamp + 1 days + 1);
+        market.settleEnglishAuction(auctionId);
+
+        // Royalty is capped at what is left after the platform fee; the seller gets 0.
+        assertEq(nft.ownerOf(tokenId), buyer);
+        assertEq(feeRecipient.balance, 0.025 ether);
+        assertEq(royaltyReceiver.balance, 0.975 ether);
+        assertEq(seller.balance, 0);
+    }
+
+    function test_R2_MaxRoyaltyCannotBlockDirectPurchase() public {
+        uint256 listingId = _list();
+        vm.mockCall(
+            address(nft),
+            abi.encodeWithSignature("royaltyInfo(uint256,uint256)", tokenId, 1 ether),
+            abi.encode(royaltyReceiver, type(uint256).max)
+        );
+
+        vm.prank(buyer);
+        market.buyDirectListing{ value: 1 ether }(listingId);
+
+        assertEq(nft.ownerOf(tokenId), buyer);
+        assertEq(royaltyReceiver.balance, 0.975 ether);
+    }
 }
 
 /// @dev Bids from a contract whose ERC-721 receiver hook always reverts.
