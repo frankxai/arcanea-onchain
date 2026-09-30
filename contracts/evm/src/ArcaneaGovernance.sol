@@ -418,12 +418,8 @@ contract ArcaneaGovernance is AccessControl, ReentrancyGuard {
         // Check Guardian quorum: 7/10 must vote For
         bool guardianQuorumMet = proposal.guardianForVotes >= GUARDIAN_QUORUM;
 
-        // Check delegate quorum: 51% of total delegate weight must vote For
-        bool delegateQuorumMet = true;
-        if (totalDelegateWeight > 0) {
-            uint256 requiredWeight = totalDelegateWeight * DELEGATE_QUORUM_BPS / BPS_DENOMINATOR;
-            delegateQuorumMet = proposal.delegateForWeight >= requiredWeight;
-        }
+        // Check delegate quorum: 51% of total delegate weight (rounded up) must vote For
+        bool delegateQuorumMet = proposal.delegateForWeight >= requiredDelegateWeight();
 
         if (guardianQuorumMet && delegateQuorumMet) {
             proposal.status = ProposalStatus.Queued;
@@ -548,12 +544,16 @@ contract ArcaneaGovernance is AccessControl, ReentrancyGuard {
         Proposal storage proposal = proposals[proposalId];
         guardianMet = proposal.guardianForVotes >= GUARDIAN_QUORUM;
 
-        if (totalDelegateWeight > 0) {
-            uint256 requiredWeight = totalDelegateWeight * DELEGATE_QUORUM_BPS / BPS_DENOMINATOR;
-            delegateMet = proposal.delegateForWeight >= requiredWeight;
-        } else {
-            delegateMet = true; // No delegates = auto-met
-        }
+        delegateMet = proposal.delegateForWeight >= requiredDelegateWeight(); // 0 delegates => 0 required
+    }
+
+    /**
+     * @notice Delegate For-weight a proposal needs: 51% of `totalDelegateWeight`,
+     *         rounded UP. Always > 0 when any delegate weight exists (weight 1 => 1,
+     *         2 => 2, 3 => 2, 100 => 51), and 0 only when there are no delegates.
+     */
+    function requiredDelegateWeight() public view returns (uint256) {
+        return (totalDelegateWeight * DELEGATE_QUORUM_BPS + BPS_DENOMINATOR - 1) / BPS_DENOMINATOR;
     }
 
     /// @notice Get the current vote tally for a proposal.
