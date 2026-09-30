@@ -34,6 +34,35 @@ const MAX_SYMBOL_LEN: usize = 16;
 /// Maximum URI length for off-chain metadata.
 const MAX_URI_LEN: usize = 256;
 
+/// SPL Token program ID (`TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA`).
+/// Only classic SPL Token mints are accepted; Token-2022 is out of scope here.
+pub const SPL_TOKEN_PROGRAM_ID: Pubkey = Pubkey::new_from_array([
+    6, 221, 246, 225, 215, 101, 161, 147, 217, 203, 225, 70, 206, 235, 121, 172, 28, 180, 133, 237,
+    95, 91, 55, 145, 58, 140, 245, 133, 126, 255, 0, 169,
+]);
+
+/// Packed length of an SPL Token `Mint` account.
+const SPL_MINT_LEN: usize = 82;
+
+/// Check that `nft_mint` is a real, finished NFT mint: an initialized SPL Token
+/// mint with 0 decimals, a supply of exactly 1 and no mint authority (so no
+/// further tokens can ever be minted). Parsed by hand from the packed `Mint`
+/// layout to avoid pulling in `anchor-spl` for four fields:
+///   [0..4) mint_authority COption tag, [4..36) authority,
+///   [36..44) supply (u64 LE), [44] decimals, [45] is_initialized, [46..82) freeze.
+fn validate_nft_mint(nft_mint: &AccountInfo) -> Result<()> {
+    require_keys_eq!(*nft_mint.owner, SPL_TOKEN_PROGRAM_ID, ArcaneanError::NftMintNotSplToken);
+    let data = nft_mint.try_borrow_data()?;
+    require!(data.len() == SPL_MINT_LEN, ArcaneanError::InvalidNftMint);
+    let mut supply = [0u8; 8];
+    supply.copy_from_slice(&data[36..44]);
+    require!(data[45] == 1, ArcaneanError::InvalidNftMint); // is_initialized
+    require!(data[44] == 0, ArcaneanError::InvalidNftMint); // decimals
+    require!(u64::from_le_bytes(supply) == 1, ArcaneanError::InvalidNftMint);
+    require!(data[0..4] == [0u8; 4], ArcaneanError::InvalidNftMint); // mint authority revoked
+    Ok(())
+}
+
 // ─────────────────────────────────────────────────
 //  Enums — The Five Elements, Ten Guardians, etc.
 // ─────────────────────────────────────────────────
@@ -239,6 +268,12 @@ pub enum ArcaneanError {
 
     #[msg("Arithmetic overflow")]
     Overflow,
+
+    #[msg("NFT mint is not owned by the SPL Token program")]
+    NftMintNotSplToken,
+
+    #[msg("NFT mint must be an initialized SPL mint with 0 decimals, supply 1 and no mint authority")]
+    InvalidNftMint,
 }
 
 // ─────────────────────────────────────────────────
@@ -317,6 +352,9 @@ pub mod guardian_nft {
 
         // Check collection is active
         require!(config.is_active, ArcaneanError::CollectionNotActive);
+
+        // The mint must be a real, finished SPL NFT mint, not an arbitrary pubkey.
+        validate_nft_mint(&ctx.accounts.nft_mint.to_account_info())?;
 
         // Check supply
         if config.max_supply > 0 {
@@ -527,7 +565,9 @@ pub struct MintNft<'info> {
     pub arcanean_metadata: Account<'info, ArcaneanMetadata>,
 
     /// The SPL token mint for this NFT.
-    /// CHECK: Validated by Metaplex Core in production. Here we store the key.
+    /// CHECK: `validate_nft_mint` (called first in `mint_nft`) requires an
+    /// initialized SPL Token mint owned by the Token program with decimals 0,
+    /// supply 1 and no mint authority. Who holds the token is not checked here.
     pub nft_mint: UncheckedAccount<'info>,
 
     /// The recipient of the minted NFT.

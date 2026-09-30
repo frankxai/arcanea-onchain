@@ -2,7 +2,7 @@ import * as anchor from "@coral-xyz/anchor";
 import { Program, BN } from "@coral-xyz/anchor";
 import { expect } from "chai";
 import { GuardianNft } from "../target/types/guardian_nft";
-import { provider, expectAnchorError, fundedKeypair } from "./helpers";
+import { provider, expectAnchorError, fundedKeypair, createNftMint, createSplMint } from "./helpers";
 
 describe("guardian-nft", () => {
   const program = anchor.workspace.GuardianNft as Program<GuardianNft>;
@@ -21,8 +21,13 @@ describe("guardian-nft", () => {
     )[0];
   const metaFor = (mint: anchor.web3.PublicKey) => metaForIn(collection, mint);
 
-  const firstMint = anchor.web3.Keypair.generate().publicKey;
   const recipient = anchor.web3.Keypair.generate().publicKey;
+  // Real SPL NFT mints (decimals 0, supply 1 held by `recipient`, mint authority revoked).
+  let firstMint: anchor.web3.PublicKey;
+
+  before(async () => {
+    firstMint = await createNftMint(recipient);
+  });
 
   const mint = (nftMint: anchor.web3.PublicKey) =>
     program.methods
@@ -63,7 +68,7 @@ describe("guardian-nft", () => {
   });
 
   it("enforces max supply", async () => {
-    await expectAnchorError(mint(anchor.web3.Keypair.generate().publicKey), "MaxSupplyReached");
+    await expectAnchorError(mint(await createNftMint(recipient)), "MaxSupplyReached");
   });
 
   it("evolves attributes and derives rank from gate level", async () => {
@@ -170,7 +175,7 @@ describe("guardian-nft", () => {
       // A second, legitimate collection (unlimited supply) that will mint `nftMint`.
       const issuer = await fundedKeypair(2);
       await initCollection(issuer);
-      const nftMint = anchor.web3.Keypair.generate().publicKey;
+      const nftMint = await createNftMint(recipient);
 
       // Attacker front-runs with the same mint through their own collection.
       await mintIn(attackerCollection, attacker, nftMint);
@@ -179,6 +184,70 @@ describe("guardian-nft", () => {
       await mintIn(collectionFor(issuer.publicKey), issuer, nftMint);
       const meta = await program.account.arcaneanMetadata.fetch(metaForIn(collectionFor(issuer.publicKey), nftMint));
       expect(meta.collection.toBase58()).to.equal(collectionFor(issuer.publicKey).toBase58());
+    });
+  });
+  // ── Second-model audit (Codex) C4: nft_mint must be a real SPL NFT mint ──
+  describe("nft_mint validation", () => {
+    let issuer: anchor.web3.Keypair;
+    let issuerCollection: anchor.web3.PublicKey;
+
+    const mintWith = (nftMint: anchor.web3.PublicKey) =>
+      program.methods
+        .mintNft({ earth: {} }, { lyssandria: {} }, { terra: {} }, { common: {} }, false)
+        .accountsPartial({
+          collectionConfig: issuerCollection,
+          arcaneanMetadata: metaForIn(issuerCollection, nftMint),
+          nftMint,
+          recipient,
+          mintAuthority: issuer.publicKey,
+        })
+        .signers([issuer])
+        .rpc();
+
+    before(async () => {
+      issuer = await fundedKeypair(3);
+      issuerCollection = collectionFor(issuer.publicKey);
+      await program.methods
+        .initializeCollection("Issuer", "ISS", "https://example.invalid/i.json", new BN(0), 0)
+        .accountsPartial({ collectionConfig: issuerCollection, authority: issuer.publicKey })
+        .signers([issuer])
+        .rpc();
+    });
+
+    it("accepts a real SPL NFT mint and records it", async () => {
+      const nftMint = await createNftMint(recipient);
+      await mintWith(nftMint);
+      const meta = await program.account.arcaneanMetadata.fetch(metaForIn(issuerCollection, nftMint));
+      expect(meta.mint.toBase58()).to.equal(nftMint.toBase58());
+    });
+
+    it("rejects an arbitrary pubkey that is not a mint account", async () => {
+      await expectAnchorError(mintWith(anchor.web3.Keypair.generate().publicKey), "NftMintNotSplToken");
+    });
+
+    it("rejects a mint with non-zero decimals", async () => {
+      const { mint } = await createSplMint({ decimals: 6, holder: recipient });
+      await expectAnchorError(mintWith(mint), "InvalidNftMint");
+    });
+
+    it("rejects a mint with zero supply", async () => {
+      const { mint } = await createSplMint({ supply: 0, holder: recipient });
+      await expectAnchorError(mintWith(mint), "InvalidNftMint");
+    });
+
+    it("rejects a mint with supply above 1", async () => {
+      const { mint } = await createSplMint({ supply: 2, holder: recipient });
+      await expectAnchorError(mintWith(mint), "InvalidNftMint");
+    });
+
+    it("rejects a mint whose mint authority is not revoked", async () => {
+      const { mint } = await createSplMint({ revokeMintAuthority: false, holder: recipient });
+      await expectAnchorError(mintWith(mint), "InvalidNftMint");
+    });
+
+    it("rejects an SPL token account passed as the mint", async () => {
+      const { tokenAccount } = await createSplMint({ holder: recipient });
+      await expectAnchorError(mintWith(tokenAccount), "InvalidNftMint");
     });
   });
 });
