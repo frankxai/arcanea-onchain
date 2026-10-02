@@ -1,0 +1,22 @@
+[package]
+name = "academy-badge"
+version = "0.1.0"
+description = "Arcanea academy-badge Anchor program"
+edition = "2021"
+rust-version = "1.79"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "academy_badge"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build"]
+
+[dependencies]
+anchor-lang = { version = "=0.31.1" }

@@ -86,9 +86,7 @@ contract RoyaltyEngine is AccessControl, ReentrancyGuard {
     //  Events
     // ──────────────────────────────────────────────
 
-    event CollectionRegistered(
-        address indexed collection, uint96 totalRoyaltyBps, uint256 recipientCount
-    );
+    event CollectionRegistered(address indexed collection, uint96 totalRoyaltyBps, uint256 recipientCount);
     event SplitsUpdated(address indexed collection, uint256 recipientCount);
     event SplitsLocked(address indexed collection);
     event RoyaltyDistributed(
@@ -157,7 +155,10 @@ contract RoyaltyEngine is AccessControl, ReentrancyGuard {
         uint96 totalRoyaltyBps,
         address payable[] calldata recipients,
         uint256[] calldata sharesBps
-    ) external onlyRole(REGISTRAR_ROLE) {
+    )
+        external
+        onlyRole(REGISTRAR_ROLE)
+    {
         if (isRegistered[collection]) revert CollectionAlreadyRegistered(collection);
         if (totalRoyaltyBps > 10_000) revert InvalidRoyaltyBps(totalRoyaltyBps);
         if (recipients.length == 0) revert NoRecipientsProvided();
@@ -169,13 +170,12 @@ contract RoyaltyEngine is AccessControl, ReentrancyGuard {
             if (recipients[i] == address(0)) revert ZeroAddress();
             if (sharesBps[i] == 0) revert ZeroShare();
 
-            _splits[collection].push(SplitRecipient({
-                recipient: recipients[i],
-                shareBps: sharesBps[i]
-            }));
+            _splits[collection].push(SplitRecipient({ recipient: recipients[i], shareBps: sharesBps[i] }));
 
             totalShares += sharesBps[i];
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
 
         if (totalShares != BPS_DENOMINATOR) revert SharesMustSumTo10000(totalShares);
@@ -194,7 +194,10 @@ contract RoyaltyEngine is AccessControl, ReentrancyGuard {
         address collection,
         address payable[] calldata recipients,
         uint256[] calldata sharesBps
-    ) external onlyRole(REGISTRAR_ROLE) {
+    )
+        external
+        onlyRole(REGISTRAR_ROLE)
+    {
         if (!isRegistered[collection]) revert CollectionNotRegistered(collection);
         if (isLocked[collection]) revert CollectionSplitsLocked(collection);
         if (recipients.length == 0) revert NoRecipientsProvided();
@@ -209,13 +212,12 @@ contract RoyaltyEngine is AccessControl, ReentrancyGuard {
             if (recipients[i] == address(0)) revert ZeroAddress();
             if (sharesBps[i] == 0) revert ZeroShare();
 
-            _splits[collection].push(SplitRecipient({
-                recipient: recipients[i],
-                shareBps: sharesBps[i]
-            }));
+            _splits[collection].push(SplitRecipient({ recipient: recipients[i], shareBps: sharesBps[i] }));
 
             totalShares += sharesBps[i];
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
 
         if (totalShares != BPS_DENOMINATOR) revert SharesMustSumTo10000(totalShares);
@@ -238,10 +240,7 @@ contract RoyaltyEngine is AccessControl, ReentrancyGuard {
      * @notice Update the total royalty percentage for a collection.
      * @dev Cannot update if splits are locked.
      */
-    function setCollectionRoyaltyBps(address collection, uint96 newBps)
-        external
-        onlyRole(REGISTRAR_ROLE)
-    {
+    function setCollectionRoyaltyBps(address collection, uint96 newBps) external onlyRole(REGISTRAR_ROLE) {
         if (!isRegistered[collection]) revert CollectionNotRegistered(collection);
         if (isLocked[collection]) revert CollectionSplitsLocked(collection);
         if (newBps > 10_000) revert InvalidRoyaltyBps(newBps);
@@ -282,11 +281,7 @@ contract RoyaltyEngine is AccessControl, ReentrancyGuard {
      * @param collection  NFT collection address.
      * @param tokenId     Token that was sold (for analytics).
      */
-    function distributeRoyalty(address collection, uint256 tokenId)
-        external
-        payable
-        nonReentrant
-    {
+    function distributeRoyalty(address collection, uint256 tokenId) external payable nonReentrant {
         if (!isRegistered[collection]) revert CollectionNotRegistered(collection);
         if (msg.value == 0) return;
 
@@ -306,7 +301,9 @@ contract RoyaltyEngine is AccessControl, ReentrancyGuard {
 
             earnings[splits[i].recipient] += share;
 
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
 
         totalDistributed[collection] += msg.value;
@@ -349,7 +346,10 @@ contract RoyaltyEngine is AccessControl, ReentrancyGuard {
      * @notice Calculate how much each recipient would receive for a given sale price.
      * @dev Useful for UIs to show projected earnings before a sale.
      */
-    function previewDistribution(address collection, uint256 salePrice)
+    function previewDistribution(
+        address collection,
+        uint256 salePrice
+    )
         external
         view
         returns (address[] memory recipients, uint256[] memory amounts)
@@ -371,7 +371,9 @@ contract RoyaltyEngine is AccessControl, ReentrancyGuard {
                 amounts[i] = royaltyAmount * splits[i].shareBps / BPS_DENOMINATOR;
                 remaining -= amounts[i];
             }
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
     }
 
@@ -395,5 +397,5 @@ contract RoyaltyEngine is AccessControl, ReentrancyGuard {
     }
 
     /// @dev Accept ETH sent directly to the contract (for royalty payments).
-    receive() external payable {}
+    receive() external payable { }
 }

@@ -111,7 +111,8 @@ contract ArcaneaNFT is ERC721Enumerable, ERC2981, AccessControl, Pausable, Reent
     /**
      * @notice On-chain Arcanean attributes for each token.
      * @dev Packed into 2 storage slots:
-     *   Slot 1: element(8) + guardian(8) + rank(8) + gateLevel(8) + house(8) + tier(8) + soulbound(8) + _pad(8) = 64 bits
+     *   Slot 1: element(8) + guardian(8) + rank(8) + gateLevel(8) + house(8) + tier(8) + soulbound(8) + _pad(8) = 64
+     * bits
      *           + createdAt(64) = 128 bits total in slot 1 (with padding to 256)
      *   Slot 2: lastEvolved(64) + evolutionCount(32) + customData(160) = 256 bits
      *
@@ -234,7 +235,9 @@ contract ArcaneaNFT is ERC721Enumerable, ERC2981, AccessControl, Pausable, Reent
         address royaltyReceiver,
         uint96 royaltyBps,
         address admin
-    ) ERC721(name_, symbol_) {
+    )
+        ERC721(name_, symbol_)
+    {
         if (admin == address(0)) revert ZeroAddress();
         if (royaltyReceiver == address(0)) revert ZeroAddress();
         if (royaltyBps > 10_000) revert InvalidRoyaltyBps(royaltyBps);
@@ -275,15 +278,23 @@ contract ArcaneaNFT is ERC721Enumerable, ERC2981, AccessControl, Pausable, Reent
         House house,
         Tier tier,
         bool soulbound
-    ) external payable onlyRole(MINTER_ROLE) whenNotPaused nonReentrant returns (uint256) {
+    )
+        external
+        payable
+        onlyRole(MINTER_ROLE)
+        whenNotPaused
+        nonReentrant
+        returns (uint256)
+    {
         if (to == address(0)) revert ZeroAddress();
         if (maxSupply > 0 && _nextTokenId > maxSupply) revert MaxSupplyReached();
         if (msg.value < mintPrice) revert InsufficientPayment(mintPrice, msg.value);
 
         uint256 tokenId = _nextTokenId++;
 
-        _safeMint(to, tokenId);
-
+        // Checks-effects-interactions: attributes (incl. soulbound) must be stored
+        // BEFORE _safeMint, whose onERC721Received callback could otherwise move a
+        // soulbound token while it still reads as transferable.
         _attributes[tokenId] = ArcaneanAttributes({
             element: element,
             guardian: guardian,
@@ -297,6 +308,8 @@ contract ArcaneaNFT is ERC721Enumerable, ERC2981, AccessControl, Pausable, Reent
             evolutionCount: 0,
             customData: bytes20(0)
         });
+
+        _safeMint(to, tokenId);
 
         emit TokenMinted(tokenId, to, element, guardian, tier, soulbound);
 
@@ -325,7 +338,14 @@ contract ArcaneaNFT is ERC721Enumerable, ERC2981, AccessControl, Pausable, Reent
         House house,
         Tier tier,
         bool soulbound
-    ) external payable onlyRole(MINTER_ROLE) whenNotPaused nonReentrant returns (uint256 startId) {
+    )
+        external
+        payable
+        onlyRole(MINTER_ROLE)
+        whenNotPaused
+        nonReentrant
+        returns (uint256 startId)
+    {
         if (to == address(0)) revert ZeroAddress();
         if (count == 0 || count > MAX_BATCH_SIZE) revert BatchSizeTooLarge(count, MAX_BATCH_SIZE);
         if (maxSupply > 0 && (_nextTokenId + count - 1) > maxSupply) revert MaxSupplyReached();
@@ -336,8 +356,8 @@ contract ArcaneaNFT is ERC721Enumerable, ERC2981, AccessControl, Pausable, Reent
 
         for (uint256 i = 0; i < count;) {
             uint256 tokenId = _nextTokenId++;
-            _safeMint(to, tokenId);
 
+            // Effects before the _safeMint receiver callback (see mint()).
             _attributes[tokenId] = ArcaneanAttributes({
                 element: element,
                 guardian: guardian,
@@ -352,7 +372,11 @@ contract ArcaneaNFT is ERC721Enumerable, ERC2981, AccessControl, Pausable, Reent
                 customData: bytes20(0)
             });
 
-            unchecked { ++i; }
+            _safeMint(to, tokenId);
+
+            unchecked {
+                ++i;
+            }
         }
 
         emit BatchMinted(to, startId, count);
@@ -371,11 +395,7 @@ contract ArcaneaNFT is ERC721Enumerable, ERC2981, AccessControl, Pausable, Reent
      * @param tokenId   Token to evolve.
      * @param newGateLevel  New Gate level (0-10).
      */
-    function evolveAttributes(uint256 tokenId, uint8 newGateLevel)
-        external
-        onlyRole(GUARDIAN_ROLE)
-        whenNotPaused
-    {
+    function evolveAttributes(uint256 tokenId, uint8 newGateLevel) external onlyRole(GUARDIAN_ROLE) whenNotPaused {
         if (!_exists(tokenId)) revert TokenDoesNotExist(tokenId);
         if (newGateLevel > 10) revert InvalidGateLevel(newGateLevel);
 
@@ -388,7 +408,9 @@ contract ArcaneaNFT is ERC721Enumerable, ERC2981, AccessControl, Pausable, Reent
         attrs.rank = newRank;
         attrs.lastEvolved = uint64(block.timestamp);
 
-        unchecked { attrs.evolutionCount++; }
+        unchecked {
+            attrs.evolutionCount++;
+        }
 
         emit AttributesEvolved(tokenId, oldRank, newRank, oldGateLevel, newGateLevel);
     }
@@ -397,11 +419,7 @@ contract ArcaneaNFT is ERC721Enumerable, ERC2981, AccessControl, Pausable, Reent
      * @notice Update only the Gate level without auto-rank derivation.
      * @dev For manual fine-tuning by Guardians.
      */
-    function setGateLevel(uint256 tokenId, uint8 newLevel)
-        external
-        onlyRole(GUARDIAN_ROLE)
-        whenNotPaused
-    {
+    function setGateLevel(uint256 tokenId, uint8 newLevel) external onlyRole(GUARDIAN_ROLE) whenNotPaused {
         if (!_exists(tokenId)) revert TokenDoesNotExist(tokenId);
         if (newLevel > 10) revert InvalidGateLevel(newLevel);
 
@@ -416,11 +434,7 @@ contract ArcaneaNFT is ERC721Enumerable, ERC2981, AccessControl, Pausable, Reent
      * @notice Directly set a token's Rank (override the gate-derived rank).
      * @dev For special promotions or corrections.
      */
-    function setRank(uint256 tokenId, Rank newRank)
-        external
-        onlyRole(GUARDIAN_ROLE)
-        whenNotPaused
-    {
+    function setRank(uint256 tokenId, Rank newRank) external onlyRole(GUARDIAN_ROLE) whenNotPaused {
         if (!_exists(tokenId)) revert TokenDoesNotExist(tokenId);
 
         ArcaneanAttributes storage attrs = _attributes[tokenId];
@@ -434,11 +448,7 @@ contract ArcaneaNFT is ERC721Enumerable, ERC2981, AccessControl, Pausable, Reent
      * @notice Set the custom data field for a token.
      * @dev Reserved for future protocol extensions (e.g., IP asset IDs, achievement hashes).
      */
-    function setCustomData(uint256 tokenId, bytes20 data)
-        external
-        onlyRole(GUARDIAN_ROLE)
-        whenNotPaused
-    {
+    function setCustomData(uint256 tokenId, bytes20 data) external onlyRole(GUARDIAN_ROLE) whenNotPaused {
         if (!_exists(tokenId)) revert TokenDoesNotExist(tokenId);
         _attributes[tokenId].customData = data;
     }
@@ -449,10 +459,7 @@ contract ArcaneaNFT is ERC721Enumerable, ERC2981, AccessControl, Pausable, Reent
      *      Use case: Converting a tradeable NFT into a permanent badge, or
      *      releasing a soulbound token for a special event.
      */
-    function setSoulbound(uint256 tokenId, bool soulbound)
-        external
-        onlyRole(ADMIN_ROLE)
-    {
+    function setSoulbound(uint256 tokenId, bool soulbound) external onlyRole(ADMIN_ROLE) {
         if (!_exists(tokenId)) revert TokenDoesNotExist(tokenId);
         _attributes[tokenId].soulbound = soulbound;
 
@@ -489,10 +496,7 @@ contract ArcaneaNFT is ERC721Enumerable, ERC2981, AccessControl, Pausable, Reent
      * @param receiver  Address to receive royalties.
      * @param feeBps    Fee in basis points (max 10000 = 100%).
      */
-    function setDefaultRoyalty(address receiver, uint96 feeBps)
-        external
-        onlyRole(ADMIN_ROLE)
-    {
+    function setDefaultRoyalty(address receiver, uint96 feeBps) external onlyRole(ADMIN_ROLE) {
         if (receiver == address(0)) revert ZeroAddress();
         if (feeBps > 10_000) revert InvalidRoyaltyBps(feeBps);
 
@@ -505,10 +509,7 @@ contract ArcaneaNFT is ERC721Enumerable, ERC2981, AccessControl, Pausable, Reent
      * @notice Set a per-token royalty override.
      * @dev Useful for 1/1 Legendary pieces with custom creator splits.
      */
-    function setTokenRoyalty(uint256 tokenId, address receiver, uint96 feeBps)
-        external
-        onlyRole(ADMIN_ROLE)
-    {
+    function setTokenRoyalty(uint256 tokenId, address receiver, uint96 feeBps) external onlyRole(ADMIN_ROLE) {
         if (!_exists(tokenId)) revert TokenDoesNotExist(tokenId);
         if (receiver == address(0)) revert ZeroAddress();
         if (feeBps > 10_000) revert InvalidRoyaltyBps(feeBps);
@@ -611,9 +612,8 @@ contract ArcaneaNFT is ERC721Enumerable, ERC2981, AccessControl, Pausable, Reent
         if (metadataRenderer != address(0)) {
             // Delegate to external renderer (allows on-chain SVG, dynamic metadata, etc.)
             // Using staticcall for gas safety and to prevent state changes.
-            (bool success, bytes memory data) = metadataRenderer.staticcall(
-                abi.encodeWithSignature("tokenURI(uint256)", tokenId)
-            );
+            (bool success, bytes memory data) =
+                metadataRenderer.staticcall(abi.encodeWithSignature("tokenURI(uint256)", tokenId));
             if (success && data.length > 0) {
                 return abi.decode(data, (string));
             }
@@ -633,11 +633,7 @@ contract ArcaneaNFT is ERC721Enumerable, ERC2981, AccessControl, Pausable, Reent
      *      Soulbound tokens can only be minted (from == address(0)) or burned (to == address(0)).
      *      Regular transfers are blocked.
      */
-    function _update(address to, uint256 tokenId, address auth)
-        internal
-        override(ERC721Enumerable)
-        returns (address)
-    {
+    function _update(address to, uint256 tokenId, address auth) internal override(ERC721Enumerable) returns (address) {
         address from = _ownerOf(tokenId);
 
         // Allow minting (from == 0) and burning (to == 0), block transfers of soulbound tokens

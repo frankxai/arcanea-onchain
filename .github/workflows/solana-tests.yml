@@ -5,27 +5,75 @@ on:
     branches: [main]
     paths:
       - 'contracts/solana/**'
+      - '.github/workflows/solana-tests.yml'
   pull_request:
     branches: [main]
     paths:
       - 'contracts/solana/**'
+      - '.github/workflows/solana-tests.yml'
+  workflow_dispatch:
 
 jobs:
   anchor-test:
     name: Anchor Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: contracts/solana
     steps:
       - uses: actions/checkout@v4
 
+      # rustflags: '' — the action defaults RUSTFLAGS to "-D warnings", which
+      # turns the programs' existing warnings into IDL-build failures.
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
+          rustflags: ''
+          cache-workspaces: contracts/solana
 
-      - uses: metadaoproject/setup-anchor@v1
+      - uses: metadaoproject/setup-anchor@v3.4
         with:
-          anchor-version: '0.31.0'
-          solana-cli-version: '2.1.0'
+          anchor-version: '0.31.1'
+          solana-cli-version: '2.1.21'
+          node-version: '20'
 
+      # setup-anchor installs @coral-xyz/anchor-cli from npm. That package ships
+      # its binary without the exec bit, and the 0.31.1 package actually
+      # contains a 0.31.0 binary, so its JS wrapper refuses to run it — then
+      # prints "Could not find globally installed anchor" and EXITS 0, making
+      # every anchor command a silent green no-op. Use the official release
+      # binary instead and fail hard unless it answers with the right version.
+      - name: Install official anchor-cli 0.31.1 binary
+        run: |
+          mkdir -p "$HOME/.anchor-bin"
+          curl -sSfL -o "$HOME/.anchor-bin/anchor"             https://github.com/solana-foundation/anchor/releases/download/v0.31.1/anchor-0.31.1-x86_64-unknown-linux-gnu
+          chmod +x "$HOME/.anchor-bin/anchor"
+          echo "$HOME/.anchor-bin" >> "$GITHUB_PATH"
+
+      - name: Verify anchor CLI
+        run: |
+          which anchor
+          anchor --version | tee /dev/stderr | grep -q 'anchor-cli 0.31.1'
+
+      - name: Create throwaway localnet wallet
+        run: solana-keygen new --no-bip39-passphrase --silent --force -o ~/.config/solana/id.json
+
+      - name: Install test dependencies
+        run: npm ci
+
+      # Program keypairs are generated per run and never committed. Syncing
+      # points declare_id!/Anchor.toml at them so localnet deploys match.
+      - name: Build and sync program IDs
+        run: |
+          anchor build
+          anchor keys sync
+          git diff --stat
+
+      # Guard against a silent no-op: require mocha's summary with zero failures.
       - name: Run Anchor tests
-        working-directory: contracts/solana
-        run: anchor test
+        run: |
+          set -o pipefail
+          anchor test 2>&1 | tee anchor-test.log
+          grep -Eq '[0-9]+ passing' anchor-test.log
+          ! grep -Eq '[0-9]+ failing' anchor-test.log

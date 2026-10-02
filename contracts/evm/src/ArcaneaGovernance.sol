@@ -27,6 +27,7 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract ArcaneaGovernance is AccessControl, ReentrancyGuard {
     // ──────────────────────────────────────────────
@@ -252,15 +253,20 @@ contract ArcaneaGovernance is AccessControl, ReentrancyGuard {
         address target,
         uint256 value,
         bytes calldata callData
-    ) external returns (uint256 proposalId) {
+    )
+        external
+        returns (uint256 proposalId)
+    {
         if (!hasRole(GUARDIAN_ROLE, msg.sender) && !hasRole(DELEGATE_ROLE, msg.sender)) {
             revert ZeroAddress(); // Unauthorized (reusing error for gas efficiency)
         }
         if (activeProposal[msg.sender] != 0) {
             // Check if previous proposal is still active
             Proposal storage prev = proposals[activeProposal[msg.sender]];
-            if (prev.status == ProposalStatus.Active || prev.status == ProposalStatus.Passed
-                || prev.status == ProposalStatus.Queued) {
+            if (
+                prev.status == ProposalStatus.Active || prev.status == ProposalStatus.Passed
+                    || prev.status == ProposalStatus.Queued
+            ) {
                 revert ProposerHasActiveProposal(msg.sender);
             }
         }
@@ -304,7 +310,11 @@ contract ArcaneaGovernance is AccessControl, ReentrancyGuard {
         address target,
         uint256 value,
         bytes calldata callData
-    ) external onlyRole(SHINKAMI_ROLE) returns (uint256 proposalId) {
+    )
+        external
+        onlyRole(SHINKAMI_ROLE)
+        returns (uint256 proposalId)
+    {
         proposalId = _nextProposalId++;
         uint64 now_ = uint64(block.timestamp);
 
@@ -409,12 +419,8 @@ contract ArcaneaGovernance is AccessControl, ReentrancyGuard {
         // Check Guardian quorum: 7/10 must vote For
         bool guardianQuorumMet = proposal.guardianForVotes >= GUARDIAN_QUORUM;
 
-        // Check delegate quorum: 51% of total delegate weight must vote For
-        bool delegateQuorumMet = true;
-        if (totalDelegateWeight > 0) {
-            uint256 requiredWeight = totalDelegateWeight * DELEGATE_QUORUM_BPS / BPS_DENOMINATOR;
-            delegateQuorumMet = proposal.delegateForWeight >= requiredWeight;
-        }
+        // Check delegate quorum: 51% of total delegate weight (rounded up) must vote For
+        bool delegateQuorumMet = proposal.delegateForWeight >= requiredDelegateWeight();
 
         if (guardianQuorumMet && delegateQuorumMet) {
             proposal.status = ProposalStatus.Queued;
@@ -539,12 +545,17 @@ contract ArcaneaGovernance is AccessControl, ReentrancyGuard {
         Proposal storage proposal = proposals[proposalId];
         guardianMet = proposal.guardianForVotes >= GUARDIAN_QUORUM;
 
-        if (totalDelegateWeight > 0) {
-            uint256 requiredWeight = totalDelegateWeight * DELEGATE_QUORUM_BPS / BPS_DENOMINATOR;
-            delegateMet = proposal.delegateForWeight >= requiredWeight;
-        } else {
-            delegateMet = true; // No delegates = auto-met
-        }
+        delegateMet = proposal.delegateForWeight >= requiredDelegateWeight(); // 0 delegates => 0 required
+    }
+
+    /**
+     * @notice Delegate For-weight a proposal needs: 51% of `totalDelegateWeight`,
+     *         rounded UP. Always > 0 when any delegate weight exists (weight 1 => 1,
+     *         2 => 2, 3 => 2, 100 => 51), and 0 only when there are no delegates.
+     */
+    function requiredDelegateWeight() public view returns (uint256) {
+        // mulDiv: full-precision, so no intermediate overflow for any accepted weight total.
+        return Math.mulDiv(totalDelegateWeight, DELEGATE_QUORUM_BPS, BPS_DENOMINATOR, Math.Rounding.Ceil);
     }
 
     /// @notice Get the current vote tally for a proposal.
